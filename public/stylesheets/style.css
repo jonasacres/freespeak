@@ -1,0 +1,121 @@
+html,body { height: 100%; margin: 0px; padding: 0px; }
+
+body {
+  font: 13px "Courier New",Courier,"Lucida Sans Typewriter","Lucida Typewriter",monospace;
+  background-color:#000;
+  color:#40d600;
+}
+
+#terminal {
+  background-color:#0d110a;
+  padding:0px;
+  height:100%;
+  width:100%;
+}
+
+#prompt {
+  position:absolute;
+  bottom:15px;
+  width:100%;
+
+  padding:0;
+
+  background-color:#222;
+  color:#eee;
+}
+
+#footer {
+  position:absolute;
+  bottom:0px;
+
+  width:100%;
+  height:12px;
+
+  margin:0;
+  text-align: center;
+  vertical-align: center;
+
+  font-size:10px;
+  color:#aaa;
+}
+
+#footer a {
+  color:#fff;
+}
+
+p.system {
+  color:#f00;
+}
+
+table {
+  width:100%;
+  border-collapse:collapse;
+}
+
+tr {
+  vertical-align: top;
+  margin: 0;
+  padding: 0;
+}
+
+td.timestamp {
+  font-weight: bold;
+  color: #777;
+  width: 80px;
+}
+
+td.nick {
+  font-weight: bold;
+  width: 80px;
+}
+
+tr.system td.nick {
+  color: #aaa;
+}
+
+tr.system {
+  color: #aaa;
+}
+
+tr.you {
+  background-color: #222;
+}
+
+ul {
+  padding: 0 0 0 10px;
+  margin: 0;
+}
+
+li {
+  list-style: none;
+}
+
+li.chatlink {
+  color: #fff;
+  font-weight: bold;
+}
+
+li.motd {
+  color: #40d600;
+}
+
+#typebox {
+  font: 13px "Courier New",Courier,"Lucida Sans Typewriter","Lucida Typewriter",monospace;
+  color: #fff;
+  height: 12px;
+
+  white-space: nowrap;
+  overflow: auto;
+
+  background-color: #222;
+  padding: 5px;
+  margin:0;
+  border:0;
+  width: 95%;
+
+  resize: none;
+}
+
+#typebox:focus {
+  outline-width: 0;
+}

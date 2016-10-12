@@ -1,0 +1,308 @@
+
+var crypto = require("crypto");
+var eccrypto = require("eccrypto");
+var CryptoJS = require("crypto-js");
+
+/* Crypto stuff is wrapped up here to make it easy to swap libraries */
+function sha256(buf) {
+  return CryptoJS.SHA256(buf).toString();
+}
+
+function testSha256Busted() {
+  if(sha256("foo") == sha256("bar")) throw "SHA256 is busted. Sorry.";
+}
+
+function randomBytes(length) {
+  return crypto.randomBytes(length);
+}
+
+function fromBase64(buf) {
+  return Buffer(buf, 'base64');
+}
+
+function toBase64(buf) {
+  return Buffer(buf).toString('base64');
+}
+
+function symmetricDecrypt(key, ciphertext) {
+  var outerObject = ciphertext.split(",");
+  var encoded = CryptoJS.AES.decrypt(outerObject[0], key, {iv:CryptoJS.enc.Hex.parse(outerObject[1])}).toString(CryptoJS.enc.Utf8);
+  var plaintext = fromBase64(encoded.split(",")[1]).toString('utf8')
+  return plaintext;
+}
+
+function symmetricEncrypt(key, plaintext) {
+  var leftPadLength = Math.floor(key.length*Math.random())+key.length,
+      rightPadLength = Math.floor(key.length*Math.random())+key.length,
+      iv = new CryptoJS.lib.WordArray.random(key.length),
+      encoded = [ toBase64(randomBytes(leftPadLength)), toBase64(plaintext), toBase64(randomBytes(rightPadLength)) ];
+  
+  return CryptoJS.AES.encrypt(encoded.join(","), key, {iv:iv}).toString() + "," + iv.toString();
+}
+
+function deriveSharedSecret(private, public, callback) {
+  return eccrypto.derive(private, public).then(function(sharedKey) {
+    callback(sharedKey);
+  });
+}
+
+function makePrivateKey(bits) {
+  return randomBytes(bits / 8)
+}
+
+function getPublicKey(privateKey) {
+  return eccrypto.getPublic(privateKey);
+}
+
+function serializePublicKey(publicKey) {
+  return toBase64(publicKey);
+}
+
+function deserializePublicKey(serializedPublicKey) {
+  return fromBase64(serializedPublicKey);
+}
+
+/* Actual FreespeakClient, used to manage comms with server */
+function FreespeakClient() {
+  this.keyLength = 256; 
+  
+  this.privateKey = makePrivateKey(this.keyLength);
+  this.publicKey = getPublicKey(this.privateKey);
+  this.handshakeNonce = toBase64(randomBytes(this.keyLength / 8));
+  this.serializedPublicKey = serializePublicKey(this.publicKey);
+
+  this.keys = {};
+  this.eventListeners = {};
+}
+
+FreespeakClient.prototype.on = function(name, callback) {
+  if(!this.eventListeners[name]) this.eventListeners[name] = [];
+  this.eventListeners[name].push(callback);
+}
+
+FreespeakClient.prototype.event = function(name, data) {
+  var event = { "name":name, "data":data },
+      listeners = this.eventListeners[name];
+
+  if(!listeners) return;
+  listeners.forEach(function(listener) { listener(event) });
+}
+
+FreespeakClient.prototype.connect = function(url) {
+  this.socket = new WebSocket(url);
+  var self = this;
+
+  this.socket.onopen = function(event) {
+    self.sendKey();
+  }
+
+  this.socket.onmessage = function(event) {
+    var args = JSON.parse(event.data);
+    
+    if(!(args instanceof Array)) return;
+
+    var handler = "__handle_" + args[0];
+    if(self[handler] == null) return;
+
+    self[handler](args);
+  }
+}
+
+//
+// Methods for sending requests to server
+//
+
+FreespeakClient.prototype.send = function(payload) {
+  this.socket.send(payload);
+}
+
+FreespeakClient.prototype.sendKey = function() {
+  this.send(JSON.stringify(["key", this.serializedPublicKey, this.handshakeNonce]));
+  this.event("keySent", {});
+}
+
+FreespeakClient.prototype.sendGetKey = function(id) {
+  this.send(JSON.stringify(["getkey", id]));
+  this.event("getKeySent", {"id":id});
+}
+
+FreespeakClient.prototype.sendOffer = function(id, pubkey, peerHandshakeNonce) {
+  var self = this;
+
+  deriveSharedSecret(this.privateKey, pubkey, function(sharedKey) {
+    var supplementNonce = toBase64(randomBytes(self.keyLength / 8));
+
+    self.connectionInfo = {
+      "id":id,
+      "key":sha256(supplementNonce + self.handshakeNonce + peerHandshakeNonce),
+      "responseHash":sha256(self.id + supplementNonce + peerHandshakeNonce)
+    };
+
+    var nonceHash = sha256(supplementNonce);
+    var nonceEncrypted = symmetricEncrypt(sharedKey, supplementNonce);
+
+    self.send(JSON.stringify(["offer", id, nonceEncrypted, nonceHash]));
+  });
+
+  this.event("offerSent", {"id":id});
+}
+
+FreespeakClient.prototype.sendAccept = function(offerData) {
+  this.connectionInfo = offerData;
+
+  var encryptedResponseHash = symmetricEncrypt(this.connectionInfo.key, this.connectionInfo.responseHash);
+  this.send(JSON.stringify(["accept", this.connectionInfo.id, encryptedResponseHash]));
+  this.event("acceptSent", {"id":this.connectionInfo.id});
+}
+
+FreespeakClient.prototype.sendMsg = function(id, msg) {
+  if(id != this.connectionInfo.id) throw "Support for multiple peers not yet available.";
+
+  this.send(JSON.stringify(["msg", id, symmetricEncrypt(this.connectionInfo.key, msg)]));
+  this.event("msgSent", {"id":id, "msg":msg});
+}
+
+//
+// Message handlers, for processing incoming async requests from server
+//
+
+FreespeakClient.prototype.__handle_key = function(args) {
+  this.id = args[1];
+  this.event("connect", { "id":args[1], "motd":args[2] });
+}
+
+FreespeakClient.prototype.__handle_getkey = function(args) {
+  this.event("getkey", { "id":args[1], "pubkey":deserializePublicKey(args[2]), "nonce":args[3] });
+}
+
+FreespeakClient.prototype.__handle_offer = function(args) {
+  var peerKey = deserializePublicKey(args[2]),
+      peerHandshakeNonce = args[3],
+      self = this;
+  
+  deriveSharedSecret(this.privateKey, peerKey, function(sharedKey) {
+    var supplementNonce = symmetricDecrypt(sharedKey, args[4]),
+        expectedNonceHash = args[5],
+        actualNonceHash = sha256(supplementNonce);
+
+    if(actualNonceHash != expectedNonceHash) {
+      console.log("Ignoring offer from " + args[1] + ": hash of decrypted nonce did not match alleged nonce hash of " + expectedNonceHash);
+      return;
+    }
+
+    var data = {
+      "id":args[1],
+      "key": sha256(supplementNonce + peerHandshakeNonce + self.handshakeNonce),
+      "responseHash":sha256(args[1] + supplementNonce + self.handshakeNonce)
+    };
+
+    self.event("offer", data);
+  });
+}
+
+FreespeakClient.prototype.__handle_accept = function(args) {
+  var responseHash = symmetricDecrypt(this.connectionInfo.key, args[2]);
+
+  if(this.connectionInfo.responseHash != responseHash) {
+    console.log("Ignoring accept from " + args[1] + ": response hash did not match expected response hash");
+    return;
+  }
+  
+  this.event("accept", {"id":args[1]});
+}
+
+FreespeakClient.prototype.__handle_msg = function(args) {
+  this.event("msg", {"id":this.peerId, "msg":symmetricDecrypt(this.connectionInfo.key, args[2])});
+}
+
+
+//
+// Frontend stuff
+//
+
+var peerName = "1234abc";
+
+function pad(x) {
+  return (x < 10) ? "0"+x : ""+x;
+}
+
+function currentTime() {
+  var ts = new Date();
+  return [pad(ts.getHours()), pad(ts.getMinutes()), pad(ts.getSeconds())].join(":");
+}
+
+function escapeHtml(unsafe) {
+  // thanks bjornd, http://stackoverflow.com/questions/6234773/can-i-escape-html-special-chars-in-javascript
+  return unsafe
+   .replace(/&/g, "&amp;")
+   .replace(/</g, "&lt;")
+   .replace(/>/g, "&gt;")
+   .replace(/"/g, "&quot;")
+   .replace(/'/g, "&#039;");
+}
+
+function addMessage(sender, message) {
+  var table = document.getElementById("terminal").firstChild,
+      row = table.insertRow(-1),
+      timestampCell = row.insertCell(0),
+      nickCell = row.insertCell(1),
+      messageCell = row.insertCell(2),
+      senderLookup = { you:"you", system:"system", them:peerName },
+      senderName;
+
+
+  row.className = sender;
+
+  senderName = senderLookup[sender] || "unknown";
+
+  timestampCell.className = "timestamp";
+  nickCell.className = "nick";
+  messageCell.className = "message";
+  
+  timestampCell.innerHTML = currentTime();
+  nickCell.innerHTML = senderName;
+  messageCell.innerHTML = "<ul><li>" + escapeHtml(message) + "</li></ul>";
+}
+
+document.addEventListener('keydown', function(event) {
+  if(event.keyCode == 13) {
+    var typebox = document.getElementById("typebox"),
+        msg = typebox.value;
+
+    typebox.value = '';
+
+    addMessage("you", msg);
+  }
+
+  document.getElementById('typebox').focus();
+});
+
+document.addEventListener('keyup', function(event) {
+  if(event.keyCode == 13) {
+    document.getElementById('typebox').value = '';
+  }
+});
+
+let [listener, connector] = [ new FreespeakClient(), new FreespeakClient() ];
+
+listener.on("key", function(event) { console.log("Registered key"); });
+listener.on("connect", function(event) { console.log("Connected as " + event.data["id"]); connector.connect("ws://127.0.0.1:3000/ws") });
+listener.on("offer", function(event) { console.log("Listener eceived offer"); listener.sendAccept(event.data) });
+listener.on("accept", function(event) { console.log("Received accept"); });
+listener.on("msg", function(event) { console.log("Received message: " + event.data.msg); });
+
+listener.connect("ws://127.0.0.1:3000/ws")
+
+connector.on("connect", function(event) {
+  console.log("Second client connected; requesting key for " + listener.id);
+  connector.sendGetKey(listener.id);
+});
+
+connector.on("getkey", function(event) {
+  console.log("Got key: " + serializePublicKey(event.data["pubkey"]));
+  connector.sendOffer(listener.id, event.data["pubkey"], event.data["nonce"]);
+});
+
+connector.on("accept", function(event) {
+  connector.sendMsg(listener.id, "hola esse");
+});
