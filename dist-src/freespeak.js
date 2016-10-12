@@ -172,6 +172,9 @@ FreespeakClient.prototype.__handle_key = function(args) {
 }
 
 FreespeakClient.prototype.__handle_getkey = function(args) {
+  if(args[2] == null) {
+    this.event("getkeyFailed", { "id":args[1] });
+  }
   this.event("getkey", { "id":args[1], "pubkey":deserializePublicKey(args[2]), "nonce":args[3] });
 }
 
@@ -212,15 +215,13 @@ FreespeakClient.prototype.__handle_accept = function(args) {
 }
 
 FreespeakClient.prototype.__handle_msg = function(args) {
-  this.event("msg", {"id":this.peerId, "msg":symmetricDecrypt(this.connectionInfo.key, args[2])});
+  this.event("msg", {"id":args[1], "msg":symmetricDecrypt(this.connectionInfo.key, args[2])});
 }
 
 
 //
 // Frontend stuff
 //
-
-var peerName = "1234abc";
 
 function pad(x) {
   return (x < 10) ? "0"+x : ""+x;
@@ -242,17 +243,20 @@ function escapeHtml(unsafe) {
 }
 
 function addMessage(sender, message) {
+  console.log(document.getElementById("terminal"));
   var table = document.getElementById("terminal").firstChild,
       row = table.insertRow(-1),
       timestampCell = row.insertCell(0),
       nickCell = row.insertCell(1),
       messageCell = row.insertCell(2),
-      senderLookup = { you:"you", system:"system", them:peerName },
+      senderLookup = { you:"you", system:"system", them:peerId },
       senderName;
 
 
   row.className = sender;
 
+  senderLookup[peerId] = peerId;
+  console.log("Sender: " + sender);
   senderName = senderLookup[sender] || "unknown";
 
   timestampCell.className = "timestamp";
@@ -271,7 +275,12 @@ document.addEventListener('keydown', function(event) {
 
     typebox.value = '';
 
-    addMessage("you", msg);
+    if(peerId) {
+      addMessage("you", msg);
+      client.sendMsg(peerId, msg);
+    } else {
+      addMessage("system", "You are not connected.");
+    }
   }
 
   document.getElementById('typebox').focus();
@@ -283,26 +292,94 @@ document.addEventListener('keyup', function(event) {
   }
 });
 
-let [listener, connector] = [ new FreespeakClient(), new FreespeakClient() ];
 
-listener.on("key", function(event) { console.log("Registered key"); });
-listener.on("connect", function(event) { console.log("Connected as " + event.data["id"]); connector.connect("ws://127.0.0.1:3000/ws") });
-listener.on("offer", function(event) { console.log("Listener eceived offer"); listener.sendAccept(event.data) });
-listener.on("accept", function(event) { console.log("Received accept"); });
-listener.on("msg", function(event) { console.log("Received message: " + event.data.msg); });
+// debug code
+if(false) {
+  var [listener, connector] = [ new FreespeakClient(), new FreespeakClient() ];
 
-listener.connect("ws://127.0.0.1:3000/ws")
+  listener.on("key", function(event) { console.log("Registered key"); });
+  listener.on("connect", function(event) { console.log("Connected as " + event.data["id"]); connector.connect("ws://127.0.0.1:3000/ws") });
+  listener.on("offer", function(event) { console.log("Listener received offer"); listener.sendAccept(event.data) });
+  listener.on("accept", function(event) { console.log("Received accept"); });
+  listener.on("msg", function(event) { console.log("Listener received message: " + event.data.msg); listener.sendMsg(connector.id, "sup") });
 
-connector.on("connect", function(event) {
-  console.log("Second client connected; requesting key for " + listener.id);
-  connector.sendGetKey(listener.id);
-});
+  listener.connect("ws://127.0.0.1:3000/ws")
 
-connector.on("getkey", function(event) {
-  console.log("Got key: " + serializePublicKey(event.data["pubkey"]));
-  connector.sendOffer(listener.id, event.data["pubkey"], event.data["nonce"]);
-});
+  connector.on("connect", function(event) {
+    console.log("Second client connected; requesting key for " + listener.id);
+    connector.sendGetKey(listener.id);
+  });
 
-connector.on("accept", function(event) {
-  connector.sendMsg(listener.id, "hola esse");
-});
+  connector.on("getkey", function(event) {
+    console.log("Got key: " + serializePublicKey(event.data["pubkey"]));
+    connector.sendOffer(listener.id, event.data["pubkey"], event.data["nonce"]);
+  });
+
+  connector.on("accept", function(event) {
+    connector.sendMsg(listener.id, "hola esse");
+  });
+
+  connector.on("msg", function(event) { console.log("Connector received message: " + event.data.msg) })
+  return;
+}
+
+var client = new FreespeakClient();
+var peerId;
+
+function runFreespeak() {
+  addMessage("system", "Connecting anonymously to server...");
+
+  client.connect("ws://127.0.0.1:3000/ws");
+
+  client.on("connect", function(event) {
+    var match = /\/talk\/([0-9a-zA-Z]+)$/.exec(window.location.href),
+        url = "http://127.0.0.1:3000/talk/" + event.data.id;
+
+    addMessage("system", "You are anonymous user " + event.data.id + ".");
+    if(!match) {
+      addMessage("system", "Give this URL to the person you want to chat securely with:");
+      addMessage("system", url);
+    }
+
+    addMessage("system", "Server MOTD:");
+    addMessage("system", event.data.motd);
+    
+    if(match) {
+      var peerId = match[1];
+      client.sendGetKey(peerId);
+      addMessage("system", "Requesting public key for " + peerId + "...");
+    } else {
+      addMessage("system", "Waiting for peer...");
+    }
+  });
+
+  client.on("getkey", function(event) {
+    addMessage("system", "Establishing end-to-end encrypted channel with " + event.data.id + "...");
+    client.sendOffer(event.data.id, event.data.pubkey, event.data.nonce);
+  });
+
+  client.on("getkeyFailed", function(event) {
+    addMessage("system", "Cannot get public key information for " + event.data.id);
+  });
+
+  client.on("offer", function(event) {
+    addMessage("system", "You are now chatting securely with " + event.data.id + ".");
+    client.sendAccept(event.data);
+    peerId = event.data.id;
+  });
+
+  client.on("accept", function(event) {
+    addMessage("system", "You are now chatting securely with " + event.data.id + ".");
+    peerId = event.data.id;
+  });
+
+  client.on("msg", function(event) {
+    addMessage(event.data.id, event.data.msg);
+  });
+
+  client.on("sendMsg", function(event) {
+    addMessage("you", event.data.msg);
+  });
+}
+
+setTimeout(runFreespeak, 100);

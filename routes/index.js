@@ -7,7 +7,7 @@ router.get('/', function(req, res, next) {
 });
 
 /* GET user page. */
-router.get('/chat/:id', function(req, res, next) {
+router.get('/talk/:id', function(req, res, next) {
   res.render('index', { title: 'Express' });
 });
 
