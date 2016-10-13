@@ -539,8 +539,10 @@ function fixElementSizes() {
   var typebox = document.getElementById("typebox");
 
   var height = "" + (typebox.getBoundingClientRect().top + window.scrollY) + "px";
+  var termWidth = "" + (window.innerWidth - sidebar.getBoundingClientRect().right + window.scrollX) + "px";
 
   terminal.style.height = height;
+  terminal.style.width = termWidth;
   sidebar.style.height = height;
 
   terminal.onscroll = function() {
@@ -615,6 +617,11 @@ var peerId;
 
 function runFreespeak() {
   fixElementSizes();
+  window.onresize = function() {
+    var snap = terminalAtBottom();
+    fixElementSizes();
+    if(snap) snapTerminalToBottom();
+  }
 
   sessionManager.on("addedSession", function(event) {
     addSessionTab(event.data.session);
@@ -645,17 +652,6 @@ function runFreespeak() {
   });
 
   client.connect(webSocketUrl());
-
-  for(var i = 0; i < 100; i++) sessionManager.addSystemMessage("spam");
-
-
-  client.on("heartbeatSent", function(event) {
-    addMessage("system", "Sent heartbeat to server...");
-  });
-
-  client.on("heartbeat", function(event) {
-    addMessage("system", "Heard server heartbeat.");
-  });
 }
 
 setTimeout(runFreespeak, 100);
