@@ -9,7 +9,6 @@ var SocketServer = require('ws').Server;
 var socketIdMap = {};
 
 var app = express();
-// var expressWs = require('express-ws')(app);
 
 var routes = require('./routes/index');
 // var ws = require('./routes/ws');
@@ -61,12 +60,9 @@ app.use(function(err, req, res, next) {
 });
 
 app.setupWebSocket = function(server) {
-  console.log("Setting up WS");
   app.wss = new SocketServer({ server });
 
   app.wss.on('connection', (ws) => {
-    console.log('Client connected');
-
     var state = {};
     var handlers = {};
 
@@ -145,9 +141,6 @@ app.setupWebSocket = function(server) {
       peer.peer = client;
       client.peer = peer;
 
-      console.log("CLIENT: " + client.id + " -> " + client.peer.id);
-      console.log("PEER: " + peer.id + " -> " + peer.peer.id);
-
       peer.socket.send(JSON.stringify(["accept", ws.id, encryptedHash]));
     };
 
@@ -195,8 +188,9 @@ app.setupWebSocket = function(server) {
     });
 
     ws.on("close", function() {
-      if(ws.peer && socketIdMap[ws.peer]) {
-        socketIdMap[ws.peer].socket.send(JSON.stringify(["disconnect", ws.id]));
+      var info = socketIdMap[ws.id];
+      if(info && info.peer && socketIdMap[info.peer.id]) {
+        info.peer.socket.send(JSON.stringify(["disconnect", ws.id]));
       }
 
       delete socketIdMap[ws.id];
