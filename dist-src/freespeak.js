@@ -310,10 +310,8 @@ function ChatSessionManager(client) {
         url = urlPrefix()+ "/talk/" + event.data.id;
 
     self.addSystemMessage("You are anonymous user " + event.data.id + ".");
-    if(!match) {
-      self.addSystemMessage("Give this URL to the person you want to chat securely with:");
-      self.addSystemMessage([ [ "chatlink", url ] ]);
-    }
+    self.addSystemMessage("Give this URL to the person you want to chat securely with:");
+    self.addSystemMessage([ [ "chatlink", url ] ]);
 
     self.addSystemMessage("Server MOTD:");
     self.addSystemMessage([ ["motd", event.data.motd] ]);
@@ -321,7 +319,7 @@ function ChatSessionManager(client) {
     if(match) {
       var peerId = match[1];
       client.sendGetKey(peerId); // TODO: this is the one place where network logic is contained in ChatSessionManager. Consider relocating.
-      self.addSystemMessage("Requesting public key for " + peerId + "...");
+      self.addSession(peerId).addMessage("system", "Requesting public key for " + peerId + "...");
     } else {
       self.addSystemMessage("Waiting for peer...");
     }
