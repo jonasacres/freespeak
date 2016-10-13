@@ -16,5 +16,4 @@
 
 #!/bin/sh
 
-sh bin/preinstall.sh
-sh bin/postinstall.sh
+browserify dist-src/freespeak.js > public/javascripts/freespeak.js

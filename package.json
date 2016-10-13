@@ -3,10 +3,12 @@
   "version": "0.0.2",
   "private": true,
   "scripts": {
+    "postinstall": "bin/prepare.sh",
     "start": "node ./bin/www"
   },
   "dependencies": {
     "body-parser": "~1.15.1",
+    "browserify": "^13.1.0",
     "cookie-parser": "~1.4.3",
     "crypto-js": "^3.1.7",
     "debug": "~2.2.0",

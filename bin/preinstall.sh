@@ -16,5 +16,4 @@
 
 #!/bin/sh
 
-sh bin/preinstall.sh
-sh bin/postinstall.sh
+tar -czf public/freespeak.tgz `find . -type f | grep -v node_modules | grep -vE "(\.git|freespeak.tgz|public/javascript/freespeak.js)" | xargs`
