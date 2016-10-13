@@ -8,6 +8,15 @@ block content
   div#prompt
     textarea#typebox(autofocus="true", placeholder="> ", rows="1")
 
+  div#sidebar
+    ul
+      li.system system
+      li.user 1234abc
+      li.user.active 1234abc
+      li.user.unread 1234abc
+      li.user 1234abc
+      li.settings Settings
+
   div#footer
     | #{title} #{version}
     |  | 
