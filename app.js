@@ -176,6 +176,11 @@ app.setupWebSocket = function(server) {
       peer.socket.send(JSON.stringify(["msg", client.id, ciphertext]));
     };
 
+    // process a heartbeat request
+    handlers.heartbeat = function() {
+      ws.send(JSON.stringify["heratbeat"]);
+    }
+
     function processWrapper(msg) {
       if(msg.length > 1024) reject("Request is too long");
       try {

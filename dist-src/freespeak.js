@@ -110,6 +110,7 @@ FreespeakClient.prototype.connect = function(url) {
 
   this.socket.onopen = function(event) {
     self.sendKey();
+    self.sendKeepalive();
   }
 
   this.socket.onmessage = function(event) {
@@ -134,6 +135,10 @@ FreespeakClient.prototype.connect = function(url) {
 
 FreespeakClient.prototype.send = function(payload) {
   this.socket.send(payload);
+}
+
+FreespeakClient.prototype.sendKeepalive = function() {
+  this.send(JSON.stringify(["keepalive"]));
 }
 
 FreespeakClient.prototype.sendKey = function() {
@@ -243,6 +248,12 @@ FreespeakClient.prototype.__handle_msg = function(args) {
 FreespeakClient.prototype.__handle_disconnect = function(args) {
   this.event("disconnect", { "id":args[1] });
   this.socket.close();
+}
+
+FreespeakClient.prototype.__handle_keepalive = function(args) {
+  var self = this;
+
+  setTimeout(function() { self.sendKeepalive() }, 10000);
 }
 
 //
@@ -437,12 +448,12 @@ function runFreespeak() {
   client.on("disconnect", function(event) {
     addMessage("system", "Server lost connection to remote peer.");
     peerId = null;
-  })
+  });
 
   client.on("close", function(event) {
     addMessage("system", "Lost connection to server.");
     peerId = null;
-  })
+  });
 }
 
 setTimeout(runFreespeak, 100);
