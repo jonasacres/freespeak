@@ -469,10 +469,20 @@ function clearMessages() {
   table.innerHTML = "";
 }
 
+function terminalAtBottom() {
+  return terminal.scrollTop >= terminal.scrollHeight - terminal.clientHeight;
+}
+
+function snapTerminalToBottom() {
+  terminal.scrollTop = terminal.scrollHeight - terminal.clientHeight;
+}
+
+
 function printMessage(sender, messages, timestamp) {
   if(!(messages instanceof Array)) messages = [ messages ];
 
-  var table = document.getElementById("terminal").firstChild,
+  var atBottom = terminalAtBottom(),
+      table = document.getElementById("terminal").firstChild,
       row = table.insertRow(-1),
       timestampCell = row.insertCell(0),
       nickCell = row.insertCell(1),
@@ -496,6 +506,7 @@ function printMessage(sender, messages, timestamp) {
   html += "</ul>"
 
   messageCell.innerHTML = html;
+  if(atBottom) snapTerminalToBottom();
 }
 
 function addSessionTab(session) {
@@ -518,6 +529,23 @@ function markSessionTab(session, className) {
     if(child.innerHTML == session.peerId) {
       child.className = className;
       return;
+    }
+  }
+}
+
+function fixElementSizes() {
+  var terminal = document.getElementById("terminal");
+  var sidebar = document.getElementById("sidebar");
+  var typebox = document.getElementById("typebox");
+
+  var height = "" + (typebox.getBoundingClientRect().top + window.scrollY) + "px";
+
+  terminal.style.height = height;
+  sidebar.style.height = height;
+
+  terminal.onscroll = function() {
+    if(sessionManager.activeSession && terminalAtBottom()) {
+      markSessionTab(sessionManager.activeSession, "active");
     }
   }
 }
@@ -586,12 +614,15 @@ var sessionManager = new ChatSessionManager(client);
 var peerId;
 
 function runFreespeak() {
+  fixElementSizes();
+
   sessionManager.on("addedSession", function(event) {
     addSessionTab(event.data.session);
   });
 
   sessionManager.on("activeSessionAddedMessage", function(event) {
     printMessage(event.data.message.sender, event.data.message.text, event.data.message.timestamp);
+    if(!terminalAtBottom()) markSessionTab(event.data.session, "active unread");
   });
 
   sessionManager.on("inactiveSessionAddedMessage", function(event) {
@@ -602,6 +633,7 @@ function runFreespeak() {
     if(event.data.prevSession) markSessionTab(event.data.prevSession, "");
     clearMessages();
     markSessionTab(event.data.session, "active");
+    snapTerminalToBottom();
   });
   
   client.on("getkey", function(event) {
@@ -613,6 +645,9 @@ function runFreespeak() {
   });
 
   client.connect(webSocketUrl());
+
+  for(var i = 0; i < 100; i++) sessionManager.addSystemMessage("spam");
+
 
   // client.on("heartbeatSent", function(event) {
   //   addMessage("system", "Sent heartbeat to server...");
