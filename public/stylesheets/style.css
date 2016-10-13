@@ -114,6 +114,8 @@ p.system {
   color: #aaa;
 
   padding: 7px 0 0 10px;
+
+  cursor: pointer;
 }
 
 #sidebar ul li.active {
