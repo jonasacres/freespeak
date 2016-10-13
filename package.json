@@ -3,7 +3,7 @@
   "version": "0.0.2",
   "private": true,
   "scripts": {
-    "postinstall": "bin/prepare.sh",
+    "postinstall": "sh bin/prepare.sh",
     "start": "node ./bin/www"
   },
   "dependencies": {
