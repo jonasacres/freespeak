@@ -178,7 +178,9 @@ FreespeakClient.prototype.__handle_key = function(args) {
 FreespeakClient.prototype.__handle_getkey = function(args) {
   if(args[2] == null) {
     this.event("getkeyFailed", { "id":args[1] });
+    return;
   }
+
   this.event("getkey", { "id":args[1], "pubkey":deserializePublicKey(args[2]), "nonce":args[3] });
 }
 
@@ -250,7 +252,23 @@ function escapeHtml(unsafe) {
    .replace(/'/g, "&#039;");
 }
 
-function addMessage(sender, message) {
+function urlBase(url) {
+  var match = /^((ws|wss|http|https):\/\/[^\/]+)\//.exec(url);
+  if(!match) throw "Unable to parse URL: " + url;
+  return match[1];
+}
+
+function urlPrefix() {
+  return urlBase(window.location.href);
+}
+
+function webSocketUrl() {
+  return urlBase(window.location.href.replace(/^http/, "ws")) + "/ws";
+}
+
+function addMessage(sender, messages) {
+  if(!(messages instanceof Array)) messages = [ messages ];
+
   var table = document.getElementById("terminal").firstChild,
       row = table.insertRow(-1),
       timestampCell = row.insertCell(0),
@@ -271,10 +289,29 @@ function addMessage(sender, message) {
   
   timestampCell.innerHTML = currentTime();
   nickCell.innerHTML = senderName;
-  messageCell.innerHTML = "<ul><li>" + escapeHtml(message) + "</li></ul>";
+
+  var html = "<ul>"
+  messages.forEach(function(message) {
+    html += "<li"
+    if(!(message instanceof Array)) message = [ null, message ];
+    if(message[0]) html += ' class="'+message[0]+'"';
+    html += ">" + escapeHtml(message[1]) + "</li>";
+  });
+  html += "</ul>"
+
+  messageCell.innerHTML = html;
 }
 
+var controlKeys = [ 17, 91, 93 ];
+var activeControlKeys = [];
+
 document.addEventListener('keydown', function(event) {
+  // if(controlKeys.indexOf(event.keyCode) != -1) {
+  //   activeControlKeys.push(event.keyCode);
+  // }
+
+  if(activeControlKeys.length > 0) return;
+
   if(event.keyCode == 13) {
     var typebox = document.getElementById("typebox"),
         msg = typebox.value;
@@ -293,6 +330,11 @@ document.addEventListener('keydown', function(event) {
 });
 
 document.addEventListener('keyup', function(event) {
+  var idx = activeControlKeys.indexOf(event.keyCode);
+  if(idx != -1) {
+    activeControlKeys.splice(idx, 1);
+  }
+
   if(event.keyCode == 13) {
     document.getElementById('typebox').value = '';
   }
@@ -304,12 +346,12 @@ if(false) {
   var [listener, connector] = [ new FreespeakClient(), new FreespeakClient() ];
 
   listener.on("key", function(event) { console.log("Registered key"); });
-  listener.on("connect", function(event) { console.log("Connected as " + event.data["id"]); connector.connect("ws://127.0.0.1:3000/ws") });
+  listener.on("connect", function(event) { console.log("Connected as " + event.data["id"]); connector.connect(webSocketUrl()) });
   listener.on("offer", function(event) { console.log("Listener received offer"); listener.sendAccept(event.data) });
   listener.on("accept", function(event) { console.log("Received accept"); });
   listener.on("msg", function(event) { console.log("Listener received message: " + event.data.msg); listener.sendMsg(connector.id, "sup") });
 
-  listener.connect("ws://127.0.0.1:3000/ws")
+  listener.connect(webSocketUrl());
 
   connector.on("connect", function(event) {
     console.log("Second client connected; requesting key for " + listener.id);
@@ -333,22 +375,22 @@ var client = new FreespeakClient();
 var peerId;
 
 function runFreespeak() {
-  addMessage("system", "Connecting anonymously to server...");
+  addMessage("system", "Connecting anonymously to Freespeak server at " + webSocketUrl() + "...");
 
-  client.connect("ws://127.0.0.1:3000/ws");
+  client.connect(webSocketUrl());
 
   client.on("connect", function(event) {
     var match = /\/talk\/([0-9a-zA-Z]+)$/.exec(window.location.href),
-        url = "http://127.0.0.1:3000/talk/" + event.data.id;
+        url = urlPrefix()+ "/talk/" + event.data.id;
 
     addMessage("system", "You are anonymous user " + event.data.id + ".");
     if(!match) {
       addMessage("system", "Give this URL to the person you want to chat securely with:");
-      addMessage("system", url);
+      addMessage("system", [ [ "chatlink", url ] ]);
     }
 
     addMessage("system", "Server MOTD:");
-    addMessage("system", event.data.motd);
+    addMessage("system", [ ["motd", event.data.motd] ]);
     
     if(match) {
       var peerId = match[1];
