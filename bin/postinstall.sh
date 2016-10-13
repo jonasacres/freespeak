@@ -16,4 +16,5 @@
 
 #!/bin/sh
 
+mkdir -p public/javascripts
 browserify dist-src/freespeak.js > public/javascripts/freespeak.js
