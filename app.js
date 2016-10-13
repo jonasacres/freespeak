@@ -98,7 +98,7 @@ app.setupWebSocket = function(server) {
 
       var hash = crypto.createHash('sha256').update(key).digest('hex'),
             id = hash.substring(hash.length-8, hash.length);
-      socketIdMap[id] = { "socket":ws, "key":key, "id":id, "nonce":nonce };
+      socketIdMap[id] = { "socket":ws, "key":key, "id":id, "nonce":nonce, "peers":{} };
       ws.id = id;
 
       var motd = "Use Tor or a proxy server for privacy.";
@@ -136,7 +136,9 @@ app.setupWebSocket = function(server) {
       // TODO: validate id, payload, hash
 
       var peer = socketIdMap[id];
-      if(!peer || peer.peer) reject("No such peer, or peer ID has already been used");
+      if(!peer) reject("No such peer");
+
+      // TODO: gracefully handle case where we send a duplicate offer
 
       peer.socket.send(JSON.stringify(["offer", ws.id, socketIdMap[ws.id].key, socketIdMap[ws.id].nonce, encryptedNonce, hash]));
     };
@@ -152,10 +154,12 @@ app.setupWebSocket = function(server) {
       // TODO: validate encryptedHash
 
       var peer = socketIdMap[id], client = socketIdMap[ws.id];
-      if(!peer || peer.peer) reject("No such peer, or peer ID has already been used");
+      if(!peer) reject("No such peer");
 
-      peer.peer = client;
-      client.peer = peer;
+      // TODO: gracefully handle case where we send a duplicate accept
+
+      peer.peers[ws.id] = client;
+      client.peers[id] = peer;
 
       peer.socket.send(JSON.stringify(["accept", ws.id, encryptedHash]));
     };
@@ -168,8 +172,7 @@ app.setupWebSocket = function(server) {
       var id = args[1], ciphertext = args[2], client = socketIdMap[ws.id], peer = socketIdMap[id];
 
       if(!client) reject("You must register a public key to do that");
-      if(!client.peer) reject("You are not connected to a peer");
-      if(client.peer.id != id) reject("You are not connected to that peer.");
+      if(!client.peers[id]) reject("You are not connected to that peer");
       if(typeof ciphertext != "string") reject("Message must be a string.");
       if(!peer) reject("Peer has disconnected.");
 
@@ -210,8 +213,11 @@ app.setupWebSocket = function(server) {
 
     ws.on("close", function() {
       var info = socketIdMap[ws.id];
-      if(info && info.peer && socketIdMap[info.peer.id]) {
-        info.peer.socket.send(JSON.stringify(["disconnect", ws.id]));
+      if(info) {
+        Object.keys(info.peers).forEach(function(peer) {
+          if(!socketIdMap[peer.id]) return;
+          peer.socket.send(JSON.stringify(["disconnect", ws.id]));
+        });
       }
 
       delete socketIdMap[ws.id];

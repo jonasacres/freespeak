@@ -89,6 +89,7 @@ function FreespeakClient() {
 
   this.keys = {};
   this.eventListeners = {};
+  this.connectionInfo = {};
 }
 
 FreespeakClient.prototype.on = function(name, callback) {
@@ -133,6 +134,8 @@ FreespeakClient.prototype.connect = function(url) {
   this.socket.onclose = function(event) {
     self.event("close", {});
   }
+
+  this.event("connecting", {"url":url});
 }
 
 //
@@ -140,6 +143,7 @@ FreespeakClient.prototype.connect = function(url) {
 //
 
 FreespeakClient.prototype.send = function(payload) {
+  // TODO: don't attempt to send if socket is in CLOSED or CLOSING state
   this.socket.send(payload);
 }
 
@@ -164,7 +168,7 @@ FreespeakClient.prototype.sendOffer = function(id, pubkey, peerHandshakeNonce) {
   deriveSharedSecret(this.privateKey, pubkey, function(sharedKey) {
     var supplementNonce = toBase64(randomBytes(self.keyLength / 8));
 
-    self.connectionInfo = {
+    self.connectionInfo[id] = {
       "id":id,
       "key":sha256(supplementNonce + self.handshakeNonce + peerHandshakeNonce),
       "responseHash":sha256(self.id + supplementNonce + peerHandshakeNonce)
@@ -180,18 +184,18 @@ FreespeakClient.prototype.sendOffer = function(id, pubkey, peerHandshakeNonce) {
 }
 
 FreespeakClient.prototype.sendAccept = function(offerData) {
-  this.connectionInfo = offerData;
+  var connInfo = this.connectionInfo[offerData.id] = offerData;
 
-  var encryptedResponseHash = symmetricEncrypt(this.connectionInfo.key, this.connectionInfo.responseHash);
-  this.send(JSON.stringify(["accept", this.connectionInfo.id, encryptedResponseHash]));
-  this.event("acceptSent", {"id":this.connectionInfo.id});
+  var encryptedResponseHash = symmetricEncrypt(connInfo.key, connInfo.responseHash);
+  this.send(JSON.stringify(["accept", connInfo.id, encryptedResponseHash]));
+  this.event("acceptSent", {"id":connInfo.id});
 }
 
 FreespeakClient.prototype.sendMsg = function(id, msg) {
-  if(id != this.connectionInfo.id) throw "Support for multiple peers not yet available.";
+  if(!this.connectionInfo[id]) throw "You are not connected to that ID";
 
-  this.send(JSON.stringify(["msg", id, symmetricEncrypt(this.connectionInfo.key, msg)]));
-  this.event("msgSent", {"id":id, "msg":msg});
+  this.send(JSON.stringify(["msg", id, symmetricEncrypt(this.connectionInfo[id].key, msg)]));
+  this.event("sendMsg", {"id":id, "msg":msg});
 }
 
 //
@@ -234,27 +238,37 @@ FreespeakClient.prototype.__handle_offer = function(args) {
     };
 
     self.event("offer", data);
+    self.event("established", data);
   });
 }
 
 FreespeakClient.prototype.__handle_accept = function(args) {
-  var responseHash = symmetricDecrypt(this.connectionInfo.key, args[2]);
+  var connInfo = this.connectionInfo[args[1]];
+  if(!connInfo) return;
 
-  if(this.connectionInfo.responseHash != responseHash) {
+  var responseHash = symmetricDecrypt(connInfo.key, args[2]);
+
+  if(connInfo.responseHash != responseHash) {
     console.log("Ignoring accept from " + args[1] + ": response hash did not match expected response hash");
     return;
   }
   
   this.event("accept", {"id":args[1]});
+  this.event("established", connInfo);
 }
 
 FreespeakClient.prototype.__handle_msg = function(args) {
-  this.event("msg", {"id":args[1], "msg":symmetricDecrypt(this.connectionInfo.key, args[2])});
+  var connInfo = this.connectionInfo[args[1]];
+  if(!connInfo) return;
+
+  this.event("msg", {"id":args[1], "msg":symmetricDecrypt(connInfo.key, args[2])});
 }
 
 FreespeakClient.prototype.__handle_disconnect = function(args) {
+  var connInfo = this.connectionInfo[args[1]];
+  if(!connInfo) return;
+
   this.event("disconnect", { "id":args[1] });
-  this.socket.close();
 }
 
 FreespeakClient.prototype.__handle_heartbeat = function(args) {
@@ -262,6 +276,155 @@ FreespeakClient.prototype.__handle_heartbeat = function(args) {
 
   setTimeout(function() { self.sendHeartbeat() }, 10000);
   this.event("heartbeat", {});
+}
+
+//
+// Session management
+//
+
+function ChatSession(peerId, callback) {
+  this.peerId = peerId;
+  this.messages = [];
+  this.callback = callback;
+  this.connected = false;
+}
+
+ChatSession.prototype.addMessage = function(sender, text, timestamp) {
+  var message = { "timestamp":(timestamp || currentTime()), "sender":sender, "text":text };
+  this.messages.push(message);
+  this.callback({"name":"addMessage", "message":message});
+}
+
+function ChatSessionManager(client) {
+  this.sessions = {};
+  this.handlers = {};
+  this.client = client;
+  var self = this;
+
+  this.client.on("connecting", function(event) {
+    self.addSystemMessage("Connecting anonymously to Freespeak server at " + event.data.url + "...");
+  });
+
+  this.client.on("connect", function(event) {
+    var match = /\/talk\/([0-9a-zA-Z]+)$/.exec(window.location.href),
+        url = urlPrefix()+ "/talk/" + event.data.id;
+
+    self.addSystemMessage("You are anonymous user " + event.data.id + ".");
+    self.addSystemMessage("Give this URL to the person you want to chat securely with:");
+    self.addSystemMessage([ [ "chatlink", url ] ]);
+
+    self.addSystemMessage("Server MOTD:");
+    self.addSystemMessage([ ["motd", event.data.motd] ]);
+    
+    if(match) {
+      var peerId = match[1];
+      client.sendGetKey(peerId); // TODO: this is the one place where network logic is contained in ChatSessionManager. Consider relocating.
+      self.addSession(peerId).addMessage("system", "Requesting public key for " + peerId + "...");
+    } else {
+      self.addSystemMessage("Waiting for peer...");
+    }
+  });
+
+  this.client.on("getkey", function(event) {
+    var session = self.addSession(event.data.id);
+    session.addMessage("system", "Establishing end-to-end encrypted channel with " + event.data.id + "...");
+  });
+
+  this.client.on("getkeyFailed", function(event) {
+    var session = self.addSession(event.data.id);
+    session.addMessage("system", "Cannot get public key information for " + event.data.id);
+  });
+
+  this.client.on("established", function(event) {
+    var session = self.addSession(event.data.id);
+    session.connected = true;
+    session.addMessage("system", "You are now chatting securely with " + event.data.id + ".");
+  });
+
+  this.client.on("disconnect", function(event) {
+    var session = self.addSession(event.data.id);
+    session.connected = false;
+    session.addMessage(event.data.id, event.data.id + " has disconnected.");
+  });
+
+  this.client.on("close", function(event) {
+    sessionManager.addBroadcastMessage("system", "Disconnected.");
+  });
+
+  this.client.on("msg", function(event) {
+    var session = self.addSession(event.data.id);
+    session.addMessage(event.data.id, event.data.msg);
+  });
+
+  this.client.on("sendMsg", function(event) {
+    var session = self.addSession(event.data.id);
+    session.addMessage("you", event.data.msg);
+  });
+}
+
+ChatSessionManager.prototype.addSystemMessage = function(text, timestamp) {
+  var session = this.addSession("system");
+  session.addMessage("system", text, timestamp)
+}
+
+ChatSessionManager.prototype.addBroadcastMessage = function(sender, text, timestamp) {
+  var self = this;
+  Object.keys(this.sessions).forEach(function(id) {
+    self.sessions[id].addMessage(sender, text, timestamp);
+  });
+}
+
+ChatSessionManager.prototype.addSession = function(id) {
+  var self = this;
+
+  if(this.sessions[id]) return this.sessions[id];
+
+  var session = new ChatSession(id, function(event) {
+    self.event("updatedSession", self.sessions[id]);
+
+    if(event.name == "addMessage") {
+      var eventName = (self.sessions[id] == self.activeSession) ? "activeSessionAddedMessage" : "inactiveSessionAddedMessage";
+      self.event(eventName, { "session":self.sessions[id], "message":event.message });
+    }
+  });
+
+  this.sessions[id] = session;
+  this.event("addedSession", { "session": this.sessions[id] });
+
+  if(this.activeSession == null || this.activeSession.peerId == "system") this.activateSession(id);
+
+  return session;
+}
+
+ChatSessionManager.prototype.getSession = function(id) {
+  return this.sessions[id];
+}
+
+ChatSessionManager.prototype.activateSession = function(id) {
+  if(this.activeSession && this.activeSession.peerId == id) return;
+
+  var self = this, prevSession = this.activeSession;
+  this.activeSession = this.addSession(id);
+
+  this.event("activatedSession", { "prevSession":prevSession, "session":this.activeSession });
+  this.activeSession.messages.forEach(function(message) {
+    self.event("activeSessionAddedMessage", { "session":self.activeSession, "message":message })
+  });
+}
+
+ChatSessionManager.prototype.event = function(name, data) {
+  if(!this.handlers[name]) return;
+  
+  var event = { "name":name, "data":data };
+
+  this.handlers[name].forEach(function(handler) {
+    handler(event)
+  });
+}
+
+ChatSessionManager.prototype.on = function(name, callback) {
+  if(!this.handlers[name]) this.handlers[name] = [];
+  this.handlers[name].push(callback);
 }
 
 //
@@ -301,29 +464,37 @@ function webSocketUrl() {
   return urlBase(window.location.href.replace(/^http/, "ws")) + "/ws";
 }
 
-function addMessage(sender, messages) {
+function clearMessages() {
+  var table = document.getElementById("terminal").firstChild;
+  table.innerHTML = "";
+}
+
+function terminalAtBottom() {
+  return terminal.scrollTop >= terminal.scrollHeight - terminal.clientHeight;
+}
+
+function snapTerminalToBottom() {
+  terminal.scrollTop = terminal.scrollHeight - terminal.clientHeight;
+}
+
+
+function printMessage(sender, messages, timestamp) {
   if(!(messages instanceof Array)) messages = [ messages ];
 
-  var table = document.getElementById("terminal").firstChild,
+  var atBottom = terminalAtBottom(),
+      table = document.getElementById("terminal").firstChild,
       row = table.insertRow(-1),
       timestampCell = row.insertCell(0),
       nickCell = row.insertCell(1),
-      messageCell = row.insertCell(2),
-      senderLookup = { you:"you", system:"system", them:peerId },
-      senderName;
+      messageCell = row.insertCell(2);
 
-
-  row.className = sender;
-
-  senderLookup[peerId] = peerId;
-  senderName = senderLookup[sender] || "unknown";
-
+  row.className = ["you", "system"].indexOf(sender) == -1 ? "them" : sender;
   timestampCell.className = "timestamp";
   nickCell.className = "nick";
   messageCell.className = "message";
   
-  timestampCell.innerHTML = currentTime();
-  nickCell.innerHTML = senderName;
+  timestampCell.innerHTML = timestamp;
+  nickCell.innerHTML = sender;
 
   var html = "<ul>"
   messages.forEach(function(message) {
@@ -335,6 +506,48 @@ function addMessage(sender, messages) {
   html += "</ul>"
 
   messageCell.innerHTML = html;
+  if(atBottom) snapTerminalToBottom();
+}
+
+function addSessionTab(session) {
+  var list = document.getElementById("sidebar").firstChild;
+  var entry = document.createElement('li');
+  if(session.peerId == "system") entry.className = "system";
+  entry.appendChild(document.createTextNode(session.peerId));
+  
+  entry.onclick = function() {
+    sessionManager.activateSession(session.peerId);
+  }
+
+  list.appendChild(entry);
+}
+
+function markSessionTab(session, className) {
+  var list = document.getElementById("sidebar").firstChild;
+
+  for(var child = list.firstChild; child !== null; child = child.nextSibling) {
+    if(child.innerHTML == session.peerId) {
+      child.className = className;
+      return;
+    }
+  }
+}
+
+function fixElementSizes() {
+  var terminal = document.getElementById("terminal");
+  var sidebar = document.getElementById("sidebar");
+  var typebox = document.getElementById("typebox");
+
+  var height = "" + (typebox.getBoundingClientRect().top + window.scrollY) + "px";
+
+  terminal.style.height = height;
+  sidebar.style.height = height;
+
+  terminal.onscroll = function() {
+    if(sessionManager.activeSession && terminalAtBottom()) {
+      markSessionTab(sessionManager.activeSession, "active");
+    }
+  }
 }
 
 document.addEventListener('keydown', function(event) {
@@ -347,11 +560,12 @@ document.addEventListener('keydown', function(event) {
 
     typebox.value = '';
 
-    if(peerId) {
-      addMessage("you", msg);
-      client.sendMsg(peerId, msg);
+    if(sessionManager.activeSession.connected) {
+      client.sendMsg(sessionManager.activeSession.peerId, msg);
+    } else if(sessionManager.activeSession.peerId == "system") {
+      sessionManager.activeSession.addMessage("system", "You cannot talk in this window.");
     } else {
-      addMessage("system", "You are not connected.");
+      sessionManager.activeSession.addMessage("system", "You are not connected.");
     }
   }
 
@@ -396,72 +610,44 @@ if(false) {
 }
 
 var client = new FreespeakClient();
+var sessionManager = new ChatSessionManager(client);
 var peerId;
 
 function runFreespeak() {
-  addMessage("system", "Connecting anonymously to Freespeak server at " + webSocketUrl() + "...");
+  fixElementSizes();
 
-  client.connect(webSocketUrl());
-
-  client.on("connect", function(event) {
-    var match = /\/talk\/([0-9a-zA-Z]+)$/.exec(window.location.href),
-        url = urlPrefix()+ "/talk/" + event.data.id;
-
-    addMessage("system", "You are anonymous user " + event.data.id + ".");
-    if(!match) {
-      addMessage("system", "Give this URL to the person you want to chat securely with:");
-      addMessage("system", [ [ "chatlink", url ] ]);
-    }
-
-    addMessage("system", "Server MOTD:");
-    addMessage("system", [ ["motd", event.data.motd] ]);
-    
-    if(match) {
-      var peerId = match[1];
-      client.sendGetKey(peerId);
-      addMessage("system", "Requesting public key for " + peerId + "...");
-    } else {
-      addMessage("system", "Waiting for peer...");
-    }
+  sessionManager.on("addedSession", function(event) {
+    addSessionTab(event.data.session);
   });
 
+  sessionManager.on("activeSessionAddedMessage", function(event) {
+    printMessage(event.data.message.sender, event.data.message.text, event.data.message.timestamp);
+    if(!terminalAtBottom()) markSessionTab(event.data.session, "active unread");
+  });
+
+  sessionManager.on("inactiveSessionAddedMessage", function(event) {
+    markSessionTab(event.data.session, "unread");
+  });
+
+  sessionManager.on("activatedSession", function(event) {
+    if(event.data.prevSession) markSessionTab(event.data.prevSession, "");
+    clearMessages();
+    markSessionTab(event.data.session, "active");
+    snapTerminalToBottom();
+  });
+  
   client.on("getkey", function(event) {
-    addMessage("system", "Establishing end-to-end encrypted channel with " + event.data.id + "...");
     client.sendOffer(event.data.id, event.data.pubkey, event.data.nonce);
   });
 
-  client.on("getkeyFailed", function(event) {
-    addMessage("system", "Cannot get public key information for " + event.data.id);
-  });
-
   client.on("offer", function(event) {
-    addMessage("system", "You are now chatting securely with " + event.data.id + ".");
     client.sendAccept(event.data);
-    peerId = event.data.id;
   });
 
-  client.on("accept", function(event) {
-    addMessage("system", "You are now chatting securely with " + event.data.id + ".");
-    peerId = event.data.id;
-  });
+  client.connect(webSocketUrl());
 
-  client.on("msg", function(event) {
-    addMessage(event.data.id, event.data.msg);
-  });
+  for(var i = 0; i < 100; i++) sessionManager.addSystemMessage("spam");
 
-  client.on("sendMsg", function(event) {
-    addMessage("you", event.data.msg);
-  });
-
-  client.on("disconnect", function(event) {
-    addMessage("system", "Server lost connection to remote peer.");
-    peerId = null;
-  });
-
-  client.on("close", function(event) {
-    addMessage("system", "Lost connection to server.");
-    peerId = null;
-  });
 
   client.on("heartbeatSent", function(event) {
     addMessage("system", "Sent heartbeat to server...");

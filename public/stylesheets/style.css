@@ -8,9 +8,14 @@ body {
 
 #terminal {
   background-color:#0d110a;
+  position:absolute;
   padding:0px;
   height:100%;
-  width:100%;
+  top:0px;
+  left:100px;
+  width:730px;
+
+  overflow-y: scroll;
 }
 
 #prompt {
@@ -24,80 +29,117 @@ body {
   color:#eee;
 }
 
-#footer {
-  position:absolute;
-  bottom:0px;
-
-  width:100%;
-  height:12px;
-
-  margin:0;
-  text-align: center;
-  vertical-align: center;
-
-  font-size:10px;
-  color:#aaa;
-}
-
-#footer a {
-  color:#fff;
-}
-
 p.system {
   color:#f00;
 }
 
-table {
+/*
+ * terminal (where the chat goes)
+ */
+
+#terminal table {
   width:100%;
   border-collapse:collapse;
+  margin-top:7px;
 }
 
-tr {
+#terminal table tr {
   vertical-align: top;
   margin: 0;
   padding: 0;
 }
 
-td.timestamp {
+#terminal table td.timestamp {
   font-weight: bold;
   color: #777;
   width: 80px;
+
+  padding-left:7px;
 }
 
-td.nick {
+#terminal table td.nick {
   font-weight: bold;
   width: 80px;
 }
 
-tr.system td.nick {
+#terminal table tr.system td.nick {
   color: #aaa;
 }
 
-tr.system {
+#terminal table tr.system {
   color: #aaa;
 }
 
-tr.you {
+#terminal table tr.you {
   background-color: #222;
 }
 
-ul {
+#terminal td ul {
   padding: 0 0 0 10px;
   margin: 0;
 }
 
-li {
+#terminal td ul li {
   list-style: none;
 }
 
-li.chatlink {
+#terminal td ul li.chatlink {
   color: #fff;
   font-weight: bold;
 }
 
-li.motd {
+#terminal td ul li.motd {
   color: #40d600;
 }
+
+/*
+ * sidebar
+ * (where chat partners are listed)
+ */
+
+#sidebar {
+  position:absolute;
+  top:0px;
+  height:100%;
+  width: 100px;
+
+  overflow-y: scroll;
+}
+
+#sidebar ul {
+  padding: 0 0 0 0;
+  margin: 0;
+}
+
+#sidebar ul li {
+  background-color: #000;
+  list-style: none;
+  height: 20px;
+  color: #aaa;
+
+  padding: 7px 0 0 10px;
+
+  cursor: pointer;
+}
+
+#sidebar ul li.active {
+  background-color: #0d110a;
+  color: #fff;
+  font-weight: bold;
+}
+
+#sidebar ul li.unread {
+  color: #f00;
+}
+
+#sidebar ul li.settings {
+  color: #40d600;
+}
+
+/*
+ * typebox
+ * (where new chat is typed in)
+ */
 
 #typebox {
   font: 13px "Courier New",Courier,"Lucida Sans Typewriter","Lucida Typewriter",monospace;
@@ -118,4 +160,30 @@ li.motd {
 
 #typebox:focus {
   outline-width: 0;
+}
+
+/*
+ * footer
+ * (version, etc.)
+ */
+
+#footer {
+  position:absolute;
+  background-color:#000;
+  padding-top: 3px;
+  bottom:0px;
+
+  width:100%;
+  height:15px;
+
+  margin:0;
+  text-align: center;
+  vertical-align: center;
+
+  font-size:10px;
+  color:#aaa;
+}
+
+#footer a {
+  color:#fff;
 }
