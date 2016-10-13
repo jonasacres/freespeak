@@ -178,7 +178,7 @@ app.setupWebSocket = function(server) {
 
     // process a heartbeat request
     handlers.heartbeat = function() {
-      ws.send(JSON.stringify["heratbeat"]);
+      ws.send(JSON.stringify(["heartbeat"]));
     }
 
     function processWrapper(msg) {

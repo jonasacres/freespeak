@@ -110,12 +110,18 @@ FreespeakClient.prototype.connect = function(url) {
 
   this.socket.onopen = function(event) {
     self.sendKey();
-    self.sendKeepalive();
+    self.sendHeartbeat();
   }
 
   this.socket.onmessage = function(event) {
-    var args = JSON.parse(event.data);
-    
+    var args;
+    try {
+      args = JSON.parse(event.data);
+    } catch(exc) {
+      console.log("Unable to parse event data: '" + event.data + "'");
+      return;
+    }
+
     if(!(args instanceof Array)) return;
 
     var handler = "__handle_" + args[0];
@@ -137,8 +143,9 @@ FreespeakClient.prototype.send = function(payload) {
   this.socket.send(payload);
 }
 
-FreespeakClient.prototype.sendKeepalive = function() {
-  this.send(JSON.stringify(["keepalive"]));
+FreespeakClient.prototype.sendHeartbeat = function() {
+  this.send(JSON.stringify(["heartbeat"]));
+  this.event("heartbeatSent", {});
 }
 
 FreespeakClient.prototype.sendKey = function() {
@@ -250,10 +257,11 @@ FreespeakClient.prototype.__handle_disconnect = function(args) {
   this.socket.close();
 }
 
-FreespeakClient.prototype.__handle_keepalive = function(args) {
+FreespeakClient.prototype.__handle_heartbeat = function(args) {
   var self = this;
 
-  setTimeout(function() { self.sendKeepalive() }, 10000);
+  setTimeout(function() { self.sendHeartbeat() }, 10000);
+  this.event("heartbeat", {});
 }
 
 //
@@ -454,6 +462,14 @@ function runFreespeak() {
     addMessage("system", "Lost connection to server.");
     peerId = null;
   });
+
+  // client.on("heartbeatSent", function(event) {
+  //   addMessage("system", "Sent heartbeat to server...");
+  // });
+
+  // client.on("heartbeat", function(event) {
+  //   addMessage("system", "Heard server heartbeat.");
+  // });
 }
 
 setTimeout(runFreespeak, 100);
