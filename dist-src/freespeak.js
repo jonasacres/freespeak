@@ -310,7 +310,7 @@ function ChatSessionManager(client) {
         url = urlPrefix()+ "/talk/" + event.data.id;
 
     self.addSystemMessage("You are anonymous user " + event.data.id + ".");
-    self.addSystemMessage("Give this URL to the person you want to chat securely with:");
+    self.addSystemMessage("Give this URL to people you want to chat securely with:");
     self.addSystemMessage([ [ "chatlink", url ] ]);
 
     self.addSystemMessage("Server MOTD:");
@@ -385,6 +385,7 @@ ChatSessionManager.prototype.addSession = function(id) {
     if(event.name == "addMessage") {
       var eventName = (self.sessions[id] == self.activeSession) ? "activeSessionAddedMessage" : "inactiveSessionAddedMessage";
       self.event(eventName, { "session":self.sessions[id], "message":event.message });
+      self.event("message", { "session":self.sessions[id], "message":event.message });
     }
   });
 
@@ -410,6 +411,18 @@ ChatSessionManager.prototype.activateSession = function(id) {
   this.activeSession.messages.forEach(function(message) {
     self.event("activeSessionAddedMessage", { "session":self.activeSession, "message":message })
   });
+}
+
+ChatSessionManager.prototype.hasUnread = function() {
+  if(!this.sessions) return false;
+
+  var self = this, retval = false;
+
+  Object.keys(this.sessions).forEach(function(id) {
+    if(self.sessions[id].unread) retval = true;
+  });
+
+  return retval;
 }
 
 ChatSessionManager.prototype.event = function(name, data) {
@@ -474,7 +487,17 @@ function terminalAtBottom() {
 }
 
 function snapTerminalToBottom() {
+  if(sessionManager.activeSession) sessionManager.activeSession.unread = false;
   terminal.scrollTop = terminal.scrollHeight - terminal.clientHeight;
+  setTitle();
+}
+
+function setTitle() {
+  if(sessionManager.hasUnread()) {
+    document.title = "<!> Freespeak";
+  } else {
+    document.title = "Freespeak";
+  }
 }
 
 
@@ -547,8 +570,21 @@ function fixElementSizes() {
 
   terminal.onscroll = function() {
     if(sessionManager.activeSession && terminalAtBottom()) {
+      sessionManager.activeSession.unread = false;
       markSessionTab(sessionManager.activeSession, "active");
     }
+  }
+
+  setTitle();
+}
+
+function setupNotifications() {
+  if(Notification.permission == 'default') {
+    Notification.requestPermission().then(function(result) {
+      if(Notification.permission == 'granted') showNotifications = true  
+    });
+  } else {
+    showNotifications = Notification.permission == 'granted'
   }
 }
 
@@ -613,27 +649,54 @@ if(false) {
 
 var client = new FreespeakClient();
 var sessionManager = new ChatSessionManager(client);
-var peerId;
+var showNotifications = false;
 
 function runFreespeak() {
   fixElementSizes();
+  setupNotifications();
+
   window.onresize = function() {
     var snap = terminalAtBottom();
     fixElementSizes();
     if(snap) snapTerminalToBottom();
   }
 
+  document.addEventListener("visibilitychange", function() {
+
+    if(!sessionManager.activeSession || !sessionManager.activeSession.unread) return;
+
+    if(terminalAtBottom()) {
+      sessionManager.activeSession.unread = false;
+      markSessionTab(sessionManager.activeSession, "active");
+      setTitle();
+    }
+  });
+
   sessionManager.on("addedSession", function(event) {
     addSessionTab(event.data.session);
   });
 
+  sessionManager.on("message", function(event) {
+    if(showNotifications && document.hidden) {
+      var not = new Notification(client.id, { "body":"<"+event.data.message.sender+"> " + event.data.message.text });
+      setTimeout(not.close.bind(not), 5000);
+    }
+  });
+
   sessionManager.on("activeSessionAddedMessage", function(event) {
     printMessage(event.data.message.sender, event.data.message.text, event.data.message.timestamp);
-    if(!terminalAtBottom()) markSessionTab(event.data.session, "active unread");
+    if(!terminalAtBottom() || document.hidden) {
+      event.data.session.unread = true;
+      markSessionTab(event.data.session, "active unread");
+    }
+
+    setTitle();
   });
 
   sessionManager.on("inactiveSessionAddedMessage", function(event) {
+    event.data.session.unread = true;
     markSessionTab(event.data.session, "unread");
+    setTitle();
   });
 
   sessionManager.on("activatedSession", function(event) {
