@@ -16,15 +16,25 @@
 
 var express = require('express');
 var router = express.Router();
+var pjson = require('../package.json');
+
+function defaultRenderVars() {
+  return {
+    title:"Freespeak",
+    version:pjson.version,
+    donateAddress:"112FioiVChxs28ahM25s8imZ5397Jbanf",
+    repoUrl:"https://github.com/jonasacres/freespeak",
+  }
+}
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
-  res.render('index', { title: 'Express' });
+  res.render('index', defaultRenderVars());
 });
 
 /* GET user page. */
 router.get('/talk/:id', function(req, res, next) {
-  res.render('index', { title: 'Express' });
+  res.render('index', defaultRenderVars());
 });
 
 module.exports = router;
