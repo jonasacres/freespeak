@@ -318,15 +318,9 @@ function addMessage(sender, messages) {
   messageCell.innerHTML = html;
 }
 
-var controlKeys = [ 17, 91, 93 ];
-var activeControlKeys = [];
-
 document.addEventListener('keydown', function(event) {
-  // if(controlKeys.indexOf(event.keyCode) != -1) {
-  //   activeControlKeys.push(event.keyCode);
-  // }
-
-  if(activeControlKeys.length > 0) return;
+  if([91, 93, 224].indexOf(event.keyCode) != -1) return;
+  if(event.metaKey && event.keyCode == 67) return;
 
   if(event.keyCode == 13) {
     var typebox = document.getElementById("typebox"),
@@ -346,11 +340,6 @@ document.addEventListener('keydown', function(event) {
 });
 
 document.addEventListener('keyup', function(event) {
-  var idx = activeControlKeys.indexOf(event.keyCode);
-  if(idx != -1) {
-    activeControlKeys.splice(idx, 1);
-  }
-
   if(event.keyCode == 13) {
     document.getElementById('typebox').value = '';
   }
