@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-var crypto = require("crypto");
 var eccrypto = require("eccrypto");
 var CryptoJS = require("crypto-js");
 
@@ -28,7 +27,9 @@ function testSha256Busted() {
 }
 
 function randomBytes(length) {
-  return crypto.randomBytes(length);
+  var arr = new Uint8Array(length);
+  global.crypto.getRandomValues(arr);
+  return new Buffer(arr);
 }
 
 function fromBase64(buf) {
