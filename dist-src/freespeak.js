@@ -463,13 +463,13 @@ function runFreespeak() {
     peerId = null;
   });
 
-  // client.on("heartbeatSent", function(event) {
-  //   addMessage("system", "Sent heartbeat to server...");
-  // });
+  client.on("heartbeatSent", function(event) {
+    addMessage("system", "Sent heartbeat to server...");
+  });
 
-  // client.on("heartbeat", function(event) {
-  //   addMessage("system", "Heard server heartbeat.");
-  // });
+  client.on("heartbeat", function(event) {
+    addMessage("system", "Heard server heartbeat.");
+  });
 }
 
 setTimeout(runFreespeak, 100);
