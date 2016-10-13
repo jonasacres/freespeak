@@ -344,7 +344,7 @@ function ChatSessionManager(client) {
   this.client.on("disconnect", function(event) {
     var session = self.addSession(event.data.id);
     session.connected = false;
-    session.addMessage(event.data.id, event.data.id + " has disconnected.");
+    session.addMessage("system", event.data.id + " has disconnected.");
   });
 
   this.client.on("close", function(event) {

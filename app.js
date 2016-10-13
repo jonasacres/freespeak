@@ -214,9 +214,9 @@ app.setupWebSocket = function(server) {
     ws.on("close", function() {
       var info = socketIdMap[ws.id];
       if(info) {
-        Object.keys(info.peers).forEach(function(peer) {
-          if(!socketIdMap[peer.id]) return;
-          peer.socket.send(JSON.stringify(["disconnect", ws.id]));
+        Object.keys(info.peers).forEach(function(id) {
+          if(!socketIdMap[id]) return;
+          info.peers[id].socket.send(JSON.stringify(["disconnect", ws.id]));
         });
       }
 
