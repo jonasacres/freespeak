@@ -289,8 +289,11 @@ function ChatSession(peerId, callback) {
   this.connected = false;
 }
 
-ChatSession.prototype.addMessage = function(sender, text, timestamp) {
-  var message = { "timestamp":(timestamp || currentTime()), "sender":sender, "text":text };
+ChatSession.prototype.addMessage = function(sender, text, options) {
+  options = options || {}
+  if(options.notify === undefined) options.notify = true
+
+  var message = { "timestamp":(options.timestamp || currentTime()), "sender":sender, "text":text, "notify":options.notify };
   this.messages.push(message);
   this.callback({"name":"addMessage", "message":message});
 }
@@ -327,28 +330,29 @@ function ChatSessionManager(client) {
 
   this.client.on("getkey", function(event) {
     var session = self.addSession(event.data.id);
-    session.addMessage("system", "Establishing end-to-end encrypted channel with " + event.data.id + "...");
+    session.addMessage("system", "Establishing end-to-end encrypted channel with " + event.data.id + "...", {"notify":false});
   });
 
   this.client.on("getkeyFailed", function(event) {
     var session = self.addSession(event.data.id);
-    session.addMessage("system", "Cannot get public key information for " + event.data.id);
+    session.addMessage("system", "Cannot get public key information for " + event.data.id, {"notify":false});
   });
 
   this.client.on("established", function(event) {
     var session = self.addSession(event.data.id);
     session.connected = true;
-    session.addMessage("system", "You are now chatting securely with " + event.data.id + ".");
+    session.addMessage("system", "You are now chatting securely with " + event.data.id + ".", {"notify":false});
   });
 
   this.client.on("disconnect", function(event) {
     var session = self.addSession(event.data.id);
     session.connected = false;
-    session.addMessage("system", event.data.id + " has disconnected.");
+    session.addMessage("system", event.data.id + " has disconnected.", {"notify":false});
   });
 
   this.client.on("close", function(event) {
-    sessionManager.addBroadcastMessage("system", "Disconnected.");
+    sessionManager.addSystemMessage("Connection to server lost.");
+    sessionManager.addBroadcastMessage("system", "Disconnected.", {"notify":false} );
   });
 
   this.client.on("msg", function(event) {
@@ -362,15 +366,15 @@ function ChatSessionManager(client) {
   });
 }
 
-ChatSessionManager.prototype.addSystemMessage = function(text, timestamp) {
+ChatSessionManager.prototype.addSystemMessage = function(text, options) {
   var session = this.addSession("system");
-  session.addMessage("system", text, timestamp)
+  session.addMessage("system", text, options)
 }
 
-ChatSessionManager.prototype.addBroadcastMessage = function(sender, text, timestamp) {
+ChatSessionManager.prototype.addBroadcastMessage = function(sender, text, options) {
   var self = this;
   Object.keys(this.sessions).forEach(function(id) {
-    self.sessions[id].addMessage(sender, text, timestamp);
+    self.sessions[id].addMessage(sender, text, options);
   });
 }
 
@@ -651,6 +655,7 @@ var client = new FreespeakClient();
 var sessionManager = new ChatSessionManager(client);
 var showNotifications = false;
 var autoreconnect = true;
+var notificationList = {};
 
 function runFreespeak() {
   fixElementSizes();
@@ -663,6 +668,7 @@ function runFreespeak() {
   }
 
   document.addEventListener("visibilitychange", function() {
+    notificationList = {};
 
     if(!sessionManager.activeSession || !sessionManager.activeSession.unread) return;
 
@@ -678,7 +684,8 @@ function runFreespeak() {
   });
 
   sessionManager.on("message", function(event) {
-    if(showNotifications && document.hidden) {
+    if(showNotifications && document.hidden && !notificationList[event.data.session.peerId]) {
+      notificationList[event.data.session.peerId] = true;
       var not = new Notification(client.id, { "body":"<"+event.data.message.sender+"> " + event.data.message.text });
       setTimeout(not.close.bind(not), 5000);
     }
@@ -718,9 +725,9 @@ function runFreespeak() {
   client.on("close", function(event) {
     if(autoreconnect) {
       var delay = 5000;
-      sessionManager.addSystemMessage("Reconnecting in " + (delay/1000) + " seconds...");
+      sessionManager.addSystemMessage("Reconnecting in " + (delay/1000) + " seconds...", {"notify":false});
       setTimeout(function() {
-        sessionManager.addSystemMessage("Reconnecting...");
+        sessionManager.addSystemMessage("Reconnecting...", {"notify":false});
         client.connect(webSocketUrl());
       }, delay);
     }
