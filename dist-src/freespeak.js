@@ -650,6 +650,7 @@ if(false) {
 var client = new FreespeakClient();
 var sessionManager = new ChatSessionManager(client);
 var showNotifications = false;
+var autoreconnect = true;
 
 function runFreespeak() {
   fixElementSizes();
@@ -712,6 +713,17 @@ function runFreespeak() {
 
   client.on("offer", function(event) {
     client.sendAccept(event.data);
+  });
+
+  client.on("close", function(event) {
+    if(autoreconnect) {
+      var delay = 5000;
+      sessionManager.addSystemMessage("Reconnecting in " + (delay/1000) + " seconds...");
+      setTimeout(function() {
+        sessionManager.addSystemMessage("Reconnecting...");
+        client.connect(webSocketUrl());
+      }, delay);
+    }
   });
 
   client.connect(webSocketUrl());
