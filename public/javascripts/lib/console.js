@@ -76,8 +76,18 @@ define(["lib/shared"], function(Shared) {
       return;
     }
 
+    if(args[1] == "system") {
+      Console.out("That name is reserved.");
+      return;
+    }
+
     var active = Shared.sessionManager.activeSession;
     if(!active) return;
+
+    if(active.peerId == "system") {
+      Console.out("You may not rename the system window.");
+      return;
+    }
 
     active.setDisplayName(args[1]);
   });
