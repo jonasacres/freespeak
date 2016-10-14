@@ -16,5 +16,4 @@
 
 #!/bin/sh
 
-mkdir -p public/javascripts
-browserify dist-src/freespeak.js > public/javascripts/freespeak.js
+browserify dist-src/crypto.js -o public/javascripts/lib/crypto.js
