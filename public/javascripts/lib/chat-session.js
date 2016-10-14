@@ -20,7 +20,7 @@
 
 define(["lib/util"], function(Util) {
   function ChatSession(peerId, callback) {
-    this.peerId = peerId;
+    this.peerId = this.displayName = peerId;
     this.messages = [];
     this.callback = callback;
     this.connected = false;
@@ -33,6 +33,24 @@ define(["lib/util"], function(Util) {
     var message = { "timestamp":(options.timestamp || Util.currentTime()), "sender":sender, "text":text, "notify":options.notify };
     this.messages.push(message);
     this.callback({"name":"addMessage", "message":message});
+  }
+
+  ChatSession.prototype.clear = function() {
+    this.messages = [];
+    this.callback({"name":"clearMessages"});
+    this.setUnread(false);
+  }
+
+  ChatSession.prototype.setDisplayName = function(displayName) {
+    var oldName = this.displayName;
+    this.displayName = displayName;
+    this.callback({"name":"changeDisplayName", "displayName":displayName, "oldDisplayName":oldName});
+  }
+
+  ChatSession.prototype.setUnread = function(unread) {
+    if(this.unread == unread) return;
+    this.unread = unread;
+    this.callback({"name":"updateUnread", "unread":unread});
   }
 
   return ChatSession;

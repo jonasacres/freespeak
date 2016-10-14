@@ -14,12 +14,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib/shared"], function(Frontend, FreespeakClient, ChatSessionManager, Shared) {
+define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib/shared", "lib/console"], function(Frontend, FreespeakClient, ChatSessionManager, Shared, Console) {
   Shared.client = new FreespeakClient();
   Shared.sessionManager = new ChatSessionManager(Shared.client);
   Shared.showNotifications = false;
   Shared.autoreconnect = true;
   Shared.notificationList = {};
+  Shared.console = Console;
 
   function runFreespeak() {
     Frontend.fixElementSizes();
@@ -39,30 +40,65 @@ define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib
     });
 
     Shared.sessionManager.on("activeSessionAddedMessage", function(event) {
-      Frontend.printMessage(event.data.message.sender, event.data.message.text, event.data.message.timestamp);
+      var senderName;
+
+      if(event.data.message.sender == event.data.session.peerId) {
+        senderName = event.data.session.displayName;
+      } else {
+        senderName = event.data.message.sender;
+      }
+      
+      Frontend.printMessage(senderName, event.data.message.text, event.data.message.timestamp);
       if(!Frontend.terminalAtBottom() || document.hidden) {
-        event.data.session.unread = true;
-        Frontend.markSessionTab(event.data.session, "active unread");
+        event.data.session.setUnread(true);
       }
 
       Frontend.setTitle();
     });
 
     Shared.sessionManager.on("inactiveSessionAddedMessage", function(event) {
-      event.data.session.unread = true;
-      Frontend.markSessionTab(event.data.session, "unread");
+      event.data.session.setUnread(true);
       Frontend.setTitle();
     });
 
     Shared.sessionManager.on("activatedSession", function(event) {
-      if(event.data.prevSession) Frontend.markSessionTab(event.data.prevSession, "");
       Frontend.clearMessages();
-      Frontend.markSessionTab(event.data.session, "active");
       Frontend.snapTerminalToBottom();
+    });
+
+    Shared.sessionManager.on("updatedSession", function(event) {
+      Frontend.syncSessionTab(event.data.session);
+    });
+
+    Shared.sessionManager.on("clearedSession", function(event) {
+      if(Shared.sessionManager.activeSession && event.data.session.peerId == Shared.sessionManager.activeSession.peerId) {
+        Frontend.clearMessages();
+      }
+    });
+
+    Shared.sessionManager.on("closedSession", function(event) {
+      Frontend.removeSessionTab(event.data.session);
+    });
+
+    Shared.sessionManager.on("setSessionDisplayName", function(event) {
+      if(event.data.session == Shared.sessionManager.activeSession) {
+        Frontend.clearMessages();
+        Shared.sessionManager.resendSessionMessages();
+      }
     });
     
     Shared.client.on("getkey", function(event) {
       Shared.client.sendOffer(event.data.id, event.data.pubkey, event.data.nonce);
+    });
+
+    Shared.client.on("connect", function(event) {
+      var peerId = Frontend.requestedPeer();
+      if(peerId) {
+        Shared.client.sendGetKey(peerId);
+        Shared.sessionManager.addSession(peerId).addMessage("system", "Requesting public key for " + peerId + "...");
+      } else {
+        Shared.sessionManager.addSystemMessage("Waiting for peer...");
+      }
     });
 
     Shared.client.on("offer", function(event) {

@@ -17,6 +17,11 @@
 define(["lib/util", "lib/shared"], function(Util, Shared) {
   function Frontend() {}
 
+  Frontend.requestedPeer = function() {
+    var match = /\/talk\/([0-9a-zA-Z]+)$/.exec(window.location.href)
+    return match ? match[1] : null;
+  }
+
   Frontend.urlBase = function(url) {
     var match = /^((ws|wss|http|https):\/\/[^\/]+)\//.exec(url);
     if(!match) throw "Unable to parse URL: " + url;
@@ -41,7 +46,7 @@ define(["lib/util", "lib/shared"], function(Util, Shared) {
   }
 
   Frontend.snapTerminalToBottom = function() {
-    if(Shared.sessionManager.activeSession) Shared.sessionManager.activeSession.unread = false;
+    if(Shared.sessionManager.activeSession) Shared.sessionManager.activeSession.setUnread(false);
     terminal.scrollTop = terminal.scrollHeight - terminal.clientHeight;
     Frontend.setTitle();
   }
@@ -89,25 +94,31 @@ define(["lib/util", "lib/shared"], function(Util, Shared) {
   Frontend.addSessionTab = function(session) {
     var list = document.getElementById("sidebar").firstChild;
     var entry = document.createElement('li');
-    if(session.peerId == "system") entry.className = "system";
-    entry.appendChild(document.createTextNode(session.peerId));
+    session.tab = entry;
     
     entry.onclick = function() {
       Shared.sessionManager.activateSession(session.peerId);
     }
 
     list.appendChild(entry);
+
+    Frontend.syncSessionTab(session);
   }
 
-  Frontend.markSessionTab = function(session, className) {
+  Frontend.removeSessionTab = function(session) {
     var list = document.getElementById("sidebar").firstChild;
+    list.removeChild(session.tab);
+  }
 
-    for(var child = list.firstChild; child !== null; child = child.nextSibling) {
-      if(child.innerHTML == session.peerId) {
-        child.className = className;
-        return;
-      }
-    }
+  Frontend.syncSessionTab = function(session) {
+    var classes = [];
+    session.tab.innerHTML = session.displayName;
+    
+    if(session.peerId == "system") classes.push("system");
+    if(session.unread) classes.push("unread");
+    if(Shared.sessionManager.activeSession && session.peerId == Shared.sessionManager.activeSession.peerId) classes.push("active");
+
+    session.tab.className = classes.join(" ");
   }
 
   Frontend.fixElementSizes = function() {
@@ -124,8 +135,8 @@ define(["lib/util", "lib/shared"], function(Util, Shared) {
 
     terminal.onscroll = function() {
       if(Shared.sessionManager.activeSession && Frontend.terminalAtBottom()) {
-        Shared.sessionManager.activeSession.unread = false;
-        Frontend.markSessionTab(Shared.sessionManager.activeSession, "active");
+        Shared.sessionManager.activeSession.setUnread(false);
+        Frontend.syncSessionTab(Shared.sessionManager.activeSession);
       }
     }
 
@@ -152,14 +163,7 @@ define(["lib/util", "lib/shared"], function(Util, Shared) {
             msg = typebox.value;
 
         typebox.value = '';
-
-        if(Shared.sessionManager.activeSession.connected) {
-          Shared.client.sendMsg(Shared.sessionManager.activeSession.peerId, msg);
-        } else if(Shared.sessionManager.activeSession.peerId == "system") {
-          Shared.sessionManager.activeSession.addMessage("system", "You cannot talk in this window.");
-        } else {
-          Shared.sessionManager.activeSession.addMessage("system", "You are not connected.");
-        }
+        Shared.console.processLine(msg);
       }
 
       document.getElementById('typebox').focus();
@@ -183,8 +187,8 @@ define(["lib/util", "lib/shared"], function(Util, Shared) {
       if(!Shared.sessionManager.activeSession || !Shared.sessionManager.activeSession.unread) return;
 
       if(Frontend.terminalAtBottom()) {
-        Shared.sessionManager.activeSession.unread = false;
-        Frontend.markSessionTab(Shared.sessionManager.activeSession, "active");
+        Shared.sessionManager.activeSession.setUnread(false);
+        Frontend.syncSessionTab(Shared.sessionManager.activeSession);
         Frontend.setTitle();
       }
     });

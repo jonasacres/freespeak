@@ -1,3 +1,19 @@
+// Freespeak, a zero-knowledge ephemeral chat server
+// Copyright (C) 2016 Jonas Acres
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
   function ChatSessionManager(client) {
     this.sessions = {};
@@ -10,8 +26,7 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
     });
 
     this.client.on("connect", function(event) {
-      var match = /\/talk\/([0-9a-zA-Z]+)$/.exec(window.location.href),
-          url = Frontend.urlPrefix() + "/talk/" + event.data.id;
+      var url = Frontend.urlPrefix() + "/talk/" + event.data.id;
 
       self.addSystemMessage("You are anonymous user " + event.data.id + ".");
       self.addSystemMessage("Give this URL to people you want to chat securely with:");
@@ -19,14 +34,6 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
 
       self.addSystemMessage("Server MOTD:");
       self.addSystemMessage([ ["motd", event.data.motd] ]);
-      
-      if(match) {
-        var peerId = match[1];
-        client.sendGetKey(peerId); // TODO: this is the one place where network logic is contained in ChatSessionManager. Consider relocating.
-        self.addSession(peerId).addMessage("system", "Requesting public key for " + peerId + "...");
-      } else {
-        self.addSystemMessage("Waiting for peer...");
-      }
     });
 
     this.client.on("getkey", function(event) {
@@ -85,13 +92,24 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
     if(this.sessions[id]) return this.sessions[id];
 
     var session = new ChatSession(id, function(event) {
-      self.event("updatedSession", self.sessions[id]);
-
-      if(event.name == "addMessage") {
-        var eventName = (self.sessions[id] == self.activeSession) ? "activeSessionAddedMessage" : "inactiveSessionAddedMessage";
-        self.event(eventName, { "session":self.sessions[id], "message":event.message });
-        self.event("message", { "session":self.sessions[id], "message":event.message });
+      switch(event.name) {
+        case "addMessage":
+          var eventName = (self.sessions[id] == self.activeSession) ? "activeSessionAddedMessage" : "inactiveSessionAddedMessage";
+          self.event(eventName, { "session":self.sessions[id], "message":event.message });
+          self.event("message", { "session":self.sessions[id], "message":event.message });
+          break;
+        case "clearMessages":
+          self.event("clearedSession", { "session":self.sessions[id] });
+          break;
+        case "changeDisplayName":
+          self.event("setSessionDisplayName", { "session":self.sessions[id], "displayName":event.displayName, "oldDisplayname":event.oldDisplayname });
+          break;
+        case "setUnread":
+          // placeholder
+          break;
       }
+
+      self.event("updatedSession", { "session":self.sessions[id] });
     });
 
     this.sessions[id] = session;
@@ -106,6 +124,16 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
     return this.sessions[id];
   }
 
+  ChatSessionManager.prototype.allSessions = function() {
+    var sessionsList = [];
+    
+    for(var i in this.sessions) {
+      sessionsList.push(this.sessions[i]);
+    }
+
+    return sessionsList;
+  }
+
   ChatSessionManager.prototype.activateSession = function(id) {
     if(this.activeSession && this.activeSession.peerId == id) return;
 
@@ -113,6 +141,14 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
     this.activeSession = this.addSession(id);
 
     this.event("activatedSession", { "prevSession":prevSession, "session":this.activeSession });
+    if(this.activeSession) this.event("updatedSession", { "session":this.activeSession });
+    if(prevSession) this.event("updatedSession", { "session":prevSession });
+
+    this.resendSessionMessages();
+  }
+
+  ChatSessionManager.prototype.resendSessionMessages = function() {
+    var self = this;
     this.activeSession.messages.forEach(function(message) {
       self.event("activeSessionAddedMessage", { "session":self.activeSession, "message":message })
     });
@@ -128,6 +164,18 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
     });
 
     return retval;
+  }
+
+  ChatSessionManager.prototype.closeSession = function(id) {
+    if(!this.sessions[id]) return;
+
+    var session = this.sessions[id];
+    delete this.sessions[id];
+    this.event("closedSession", { "session":session });
+
+    if(this.activeSession && this.activeSession.peerId == id) {
+      this.activateSession("system"); // we could probably do better than this, but not without a lot of work
+    }
   }
 
   ChatSessionManager.prototype.event = function(name, data) {
