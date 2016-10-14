@@ -28,6 +28,8 @@ define(["lib/crypto"], function(Crypto) {
     this.keys = {};
     this.eventListeners = {};
     this.connectionInfo = {};
+
+    this.state = "disconnected";
   }
 
   FreespeakClient.prototype.on = function(name, callback) {
@@ -70,10 +72,16 @@ define(["lib/crypto"], function(Crypto) {
     }
 
     this.socket.onclose = function(event) {
+      self.state = "disconnected";
       self.event("close", {});
     }
 
+    this.state = "connecting";
     this.event("connecting", {"url":url});
+  }
+
+  FreespeakClient.prototype.disconnect = function() {
+    this.socket.close();
   }
 
   //
@@ -166,6 +174,7 @@ define(["lib/crypto"], function(Crypto) {
 
   FreespeakClient.prototype.__handle_key = function(args) {
     this.id = args[1];
+    this.state = "connected";
     this.event("connect", { "id":args[1], "motd":args[2] });
   }
 

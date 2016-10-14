@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-define(["lib/shared"], function(Shared) {
+define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
   function Console() {
   }
 
@@ -114,6 +114,27 @@ define(["lib/shared"], function(Shared) {
     }
 
     Shared.sessionManager.closeSession(active.peerId);
+  });
+
+  Console.addCommand("/connect", "Re-open connection with server", "Opens a new connection with the server. No effect if you already have a connection.", function(line, args) {
+    if(Shared.client.state == "connecting" || Shared.client.state == "connected") {
+      Console.out("Already " + Shared.client.state + " to server.");
+      return;
+    }
+
+    Shared.autoreconnect = true;
+    Console.out("Connecting to " + Frontend.webSocketUrl());
+    Shared.client.connect(Frontend.webSocketUrl());
+  });
+
+  Console.addCommand("/disconnect", "Close connection with server", "Closes connection with server.", function(line, args) {
+    if(Shared.client.state == "disconnected") {
+      Console.out("Already disconnected.");
+      return;
+    }
+
+    Shared.autoreconnect = false;
+    Shared.client.disconnect();
   });
 
   Console.addCommand("/help", "Get info about commands", "/help will show you a list of all commands. /home <command> will give you help on a specific command, e.g. /help /say", function(line, args) {
