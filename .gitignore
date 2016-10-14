@@ -1,4 +1,3 @@
 node_modules
-public/javascripts/freespeak.js
 public/freespeak*.tgz
-
+public/javascripts/lib/crypto.js

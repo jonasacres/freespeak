@@ -106,11 +106,17 @@ define(["lib/crypto"], function(Crypto) {
     Crypto.deriveSharedSecret(this.privateKey, pubkey, function(sharedKey) {
       var supplementNonce = Crypto.toBase64(Crypto.randomBytes(self.keyLength / 8));
 
+      var oldInfo = self.connectionInfo[id];
+
       self.connectionInfo[id] = {
         "id":id,
         "key":Crypto.sha256(supplementNonce + self.handshakeNonce + peerHandshakeNonce),
         "responseHash":Crypto.sha256(self.id + supplementNonce + peerHandshakeNonce)
       };
+
+      if(oldInfo) {
+        self.connectionInfo[id].retxMsg = oldInfo.retxMsg;
+      }
 
       var nonceHash = Crypto.sha256(supplementNonce);
       var nonceEncrypted = Crypto.symmetricEncrypt(sharedKey, supplementNonce);
@@ -122,18 +128,36 @@ define(["lib/crypto"], function(Crypto) {
   }
 
   FreespeakClient.prototype.sendAccept = function(offerData) {
-    var connInfo = this.connectionInfo[offerData.id] = offerData;
+    var oldInfo = this.connectionInfo[offerData.id],
+        connInfo = this.connectionInfo[offerData.id] = offerData;
 
     var encryptedResponseHash = Crypto.symmetricEncrypt(connInfo.key, connInfo.responseHash);
     this.send(JSON.stringify(["accept", connInfo.id, encryptedResponseHash]));
     this.event("acceptSent", {"id":connInfo.id});
+
+    if(oldInfo && oldInfo.retxMsg) {
+      this.sendMsg(connInfo.id, oldInfo.retxMsg, {"retransmit":true});
+    }
   }
 
-  FreespeakClient.prototype.sendMsg = function(id, msg) {
-    if(!this.connectionInfo[id]) throw "You are not connected to that ID";
+  FreespeakClient.prototype.sendMsg = function(id, msg, options) {
+    if(options == null) options = {};
 
-    this.send(JSON.stringify(["msg", id, Crypto.symmetricEncrypt(this.connectionInfo[id].key, msg)]));
-    this.event("sendMsg", {"id":id, "msg":msg});
+    if(!this.connectionInfo[id]) throw "You are not connected to that ID";
+    var ciphertext = Crypto.symmetricEncrypt(this.connectionInfo[id].key, msg),
+        retransmitted = (options.retransmit == true);
+    this.connectionInfo[id].lastMsg = msg;
+    this.connectionInfo[id].lastMsgCiphertextHash = Crypto.sha256Truncated(ciphertext, 8);
+
+    this.send(JSON.stringify(["msg", id, ciphertext, retransmitted]));
+    this.event("sendMsg", {"id":id, "msg":msg, "retransmit":retransmitted });
+  }
+
+  FreespeakClient.prototype.sendCryptoFail = function(id, ciphertext) {
+    var hash = Crypto.sha256Truncated(ciphertext, 8);
+
+    this.send(JSON.stringify(["cryptofail", id, hash]));
+    this.event("sendCryptoFail", {"id":id, "ciphertext":ciphertext, "hash":hash});
   }
 
   //
@@ -191,15 +215,24 @@ define(["lib/crypto"], function(Crypto) {
       return;
     }
     
+    if(connInfo.retxMsg) {
+      this.sendMsg(connInfo.id, connInfo.retxMsg, {"retransmit":true});
+      delete connInfo.retxMsg;
+    }
+
     this.event("accept", {"id":args[1]});
     this.event("established", connInfo);
   }
 
   FreespeakClient.prototype.__handle_msg = function(args) {
     var connInfo = this.connectionInfo[args[1]];
-    if(!connInfo) return;
-
-    this.event("msg", {"id":args[1], "msg":Crypto.symmetricDecrypt(connInfo.key, args[2])});
+    
+    try {
+      if(!connInfo) throw "Don't have a connection to this peer";
+      this.event("msg", {"id":args[1], "msg":Crypto.symmetricDecrypt(connInfo.key, args[2]), "retransmit":args[2]});
+    } catch(exc) {
+      this.sendCryptoFail(args[1], Crypto.sha256Truncated(args[2], 8));
+    }
   }
 
   FreespeakClient.prototype.__handle_disconnect = function(args) {
@@ -214,6 +247,17 @@ define(["lib/crypto"], function(Crypto) {
 
     setTimeout(function() { self.sendHeartbeat() }, 10000);
     this.event("heartbeat", {});
+  }
+
+  FreespeakClient.prototype.__handle_cryptofail = function(args) {
+    var connInfo = this.connectionInfo[args[1]], reconnecting = connInfo != null;
+    
+    if(reconnecting) {
+      if(connInfo.lastMsgCiphertextHash == args[2]) connInfo.retxMsg = connInfo.lastMsg;
+      this.sendGetKey(args[1]);
+    }
+
+    this.event("cryptofail", { "id":args[1], "ciphertextHash":args[2], "reconnecting":reconnecting });
   }
 
   return FreespeakClient;

@@ -79,10 +79,10 @@ app.setupWebSocket = function(server) {
   app.wss = new SocketServer({ server });
 
   app.wss.on('connection', (ws) => {
-    var state = {};
-    var handlers = {};
+    let state = {};
+    let handlers = {};
 
-    function reject(message) {
+    let reject = (message) => {
       throw message;
     }
 
@@ -90,18 +90,18 @@ app.setupWebSocket = function(server) {
     //   arguments:
     //     1: public key, encoded in base64
     //     2: public nonce used for handshaking
-    handlers.key = function(args) {
-      var key = args[1], nonce = args[2];
+    handlers.key = (args) => {
+      let key = args[1], nonce = args[2];
 
       if(typeof(key) != "string") reject("Must specify key object");
       // TODO: check key is base64 and valid
 
-      var hash = crypto.createHash('sha256').update(key).digest('hex'),
+      let hash = crypto.createHash('sha256').update(key).digest('hex'),
             id = hash.substring(hash.length-8, hash.length);
-      socketIdMap[id] = { "socket":ws, "key":key, "id":id, "nonce":nonce, "peers":{} };
+      socketIdMap[id] = { "socket":ws, "key":key, "id":id, "nonce":nonce, "peers":new Set() };
       ws.id = id;
 
-      var motd = "Use Tor or a proxy server for privacy.";
+      let motd = "Use Tor or a proxy server for privacy.";
 
       ws.send(JSON.stringify(["key", id, motd]));
     };
@@ -109,13 +109,13 @@ app.setupWebSocket = function(server) {
     // get a key for a given id
     //   arguments:
     //     1: key id
-    handlers.getkey = function(args) {
-      var id = args[1];
+    handlers.getkey = (args) => {
+      let id = args[1];
 
       if(!id) reject("Missing key ID");
       if(typeof id != "string") reject("Must specify string key ID");
 
-      var info = socketIdMap[id];
+      let info = socketIdMap[id];
       if(!info) {
         ws.send(JSON.stringify(["getkey", id, null, null]));
         return;
@@ -129,13 +129,13 @@ app.setupWebSocket = function(server) {
     //     1: key id of remote peer
     //     2: base64-encoded 256-bit random nonce, encrypted with shared secret presumed from both keys
     //     3: sha256 of nonce 
-    handlers.offer = function(args) {
+    handlers.offer = (args) => {
       if(!ws.id) reject("You must register a public key to do that");
-      var id = args[1], encryptedNonce = args[2], hash = args[3];
+      let id = args[1], encryptedNonce = args[2], hash = args[3];
 
       // TODO: validate id, payload, hash
 
-      var peer = socketIdMap[id];
+      let peer = socketIdMap[id];
       if(!peer) reject("No such peer");
 
       // TODO: gracefully handle case where we send a duplicate offer
@@ -147,19 +147,18 @@ app.setupWebSocket = function(server) {
     //   arguments:
     //     1: key id of remote peer
     //     2: base64-encoded hash, encrypted with random symmetric key from offer, used to prove knowledge of session key to remote peer
-    handlers.accept = function(args) {
+    handlers.accept = (args) => {
       if(!ws.id) reject("You must register a public key to do that");
-      var id = args[1], encryptedHash = args[2];
+      let id = args[1], encryptedHash = args[2];
 
       // TODO: validate encryptedHash
 
-      var peer = socketIdMap[id], client = socketIdMap[ws.id];
+      let peer = socketIdMap[id], client = socketIdMap[ws.id];
       if(!peer) reject("No such peer");
 
       // TODO: gracefully handle case where we send a duplicate accept
-
-      peer.peers[ws.id] = client;
-      client.peers[id] = peer;
+      peer.peers.add(ws.id);
+      client.peers.add(id);
 
       peer.socket.send(JSON.stringify(["accept", ws.id, encryptedHash]));
     };
@@ -168,24 +167,42 @@ app.setupWebSocket = function(server) {
     //   arguments:
     //     1: a key in socketIdMap identifying remote peer we are sending this message to
     //     2: base64( encrypt(symkey, plaintext) )
-    handlers.msg = function(args) {
-      var id = args[1], ciphertext = args[2], client = socketIdMap[ws.id], peer = socketIdMap[id];
+    handlers.msg = (args) => {
+      let id = args[1], ciphertext = args[2], retransmit = args[3], client = socketIdMap[ws.id], peer = socketIdMap[id];
 
       if(!client) reject("You must register a public key to do that");
-      if(!client.peers[id]) reject("You are not connected to that peer");
-      if(typeof ciphertext != "string") reject("Message must be a string.");
-      if(!peer) reject("Peer has disconnected.");
+      if(!peer) reject("Peer is not connected.");
+      if(typeof retransmit != 'boolean') reject("Retransmit field must be boolean");
 
-      peer.socket.send(JSON.stringify(["msg", client.id, ciphertext]));
+      client.peers.add(id);
+      peer.peers.add(ws.id);
+
+      if(typeof ciphertext != "string") reject("Message must be a string.");
+
+      peer.socket.send(JSON.stringify(["msg", client.id, ciphertext, retransmit]));
     };
 
+    // inform peer that we were unable to decipher a message
+    //   arguments:
+    //     1: a peer id
+    //     2: last 8 hex characters of sha256(ciphertext) of message we could not decipher
+    handlers.cryptofail = (args) => {
+      let id = args[1], hash = args[2], peer = socketIdMap[id];
+
+      if(!ws.id) reject("You must register a public key to do that");
+      if(!peer) reject("Peer is not connected.");
+      if(hash != null && (typeof hash != "string" || hash.length != 8)) reject("Hash should be last 8 characters of failed message ciphertext, or null");
+
+      peer.socket.send(JSON.stringify["cryptofail", ws.id, hash]);
+    }
+
     // process a heartbeat request
-    handlers.heartbeat = function() {
+    handlers.heartbeat = (args) => {
       ws.send(JSON.stringify(["heartbeat"]));
     }
 
-    function processWrapper(msg) {
-      if(msg.length > 1024) reject("Request is too long");
+    let processWrapper = (msg) => {
+      if(msg.length > 1024) reject("Request is too long"); // TODO: put this in a config somewhere
       try {
         args = JSON.parse(msg);
         if(!(args instanceof Array)) reject("Request must be an array");
@@ -212,12 +229,15 @@ app.setupWebSocket = function(server) {
     });
 
     ws.on("close", function() {
-      var info = socketIdMap[ws.id];
+      let info = socketIdMap[ws.id];
+
       if(info) {
-        Object.keys(info.peers).forEach(function(id) {
-          if(!socketIdMap[id]) return;
-          info.peers[id].socket.send(JSON.stringify(["disconnect", ws.id]));
-        });
+        for(let peerId of info.peers) {
+          let peerInfo = socketIdMap[peerId];
+          if(!peerInfo) continue;
+          peerInfo.peers.delete(id);
+          peerInfo.socket.send(JSON.stringify(["disconnect", ws.id]));
+        }
       }
 
       delete socketIdMap[ws.id];

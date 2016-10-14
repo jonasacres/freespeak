@@ -72,6 +72,17 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
       var session = self.addSession(event.data.id);
       session.addMessage("you", event.data.msg);
     });
+
+    this.client.on("cryptofail", function(event) {
+      var session = self.getSession(event.data.id);
+      if(!session) return;
+
+      if(event.data.reconnecting) {
+        session.addMessage("system", "Remote peer was unable to decipher message. Reconnecting...");
+      } else {
+        session.addMessage("system", "Remote peer was unable to decipher message.");
+      }
+    });
   }
 
   ChatSessionManager.prototype.addSystemMessage = function(text, options) {

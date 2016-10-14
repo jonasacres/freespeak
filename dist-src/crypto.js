@@ -25,6 +25,11 @@ define(function() {
     return CryptoJS.SHA256(buf).toString();
   }
 
+  Crypto.sha256Truncated = function(buf, length) {
+    var hash = Crypto.sha256(buf);
+    hash = hash.substring(buf.length - length, buf.length);
+  }
+
   Crypto.randomBytes = function(length) {
     var arr = new Uint8Array(length);
     global.crypto.getRandomValues(arr);
@@ -42,7 +47,11 @@ define(function() {
   Crypto.symmetricDecrypt = function(key, ciphertext) {
     var outerObject = ciphertext.split(",");
     var encoded = CryptoJS.AES.decrypt(outerObject[0], key, {iv:CryptoJS.enc.Hex.parse(outerObject[1])}).toString(CryptoJS.enc.Utf8);
-    var plaintext = Crypto.fromBase64(encoded.split(",")[1]).toString('utf8')
+    var encodedParams = encoded.split(",");
+    var plaintext = Crypto.fromBase64(encodedParams[1]).toString('utf8')
+    
+    if(Crypto.sha256(plaintext) != encodedParams[2]) throw "This key does not decipher this ciphertext";
+
     return plaintext;
   }
 
@@ -50,7 +59,7 @@ define(function() {
     var leftPadLength = Math.floor(key.length*Math.random())+key.length,
         rightPadLength = Math.floor(key.length*Math.random())+key.length,
         iv = new CryptoJS.lib.WordArray.random(key.length),
-        encoded = [ Crypto.toBase64(Crypto.randomBytes(leftPadLength)), Crypto.toBase64(plaintext), Crypto.toBase64(Crypto.randomBytes(rightPadLength)) ];
+        encoded = [ Crypto.toBase64(Crypto.randomBytes(leftPadLength)), Crypto.toBase64(plaintext), Crypto.sha256(plaintext), Crypto.toBase64(Crypto.randomBytes(rightPadLength)) ];
     
     return CryptoJS.AES.encrypt(encoded.join(","), key, {iv:iv}).toString() + "," + iv.toString();
   }

@@ -58,7 +58,7 @@ define(["lib/shared"], function(Shared) {
         command = Console.commands[args[0]];
 
     if(!command) {
-      Console.out("Unrecognized command: " + command);
+      Console.out("Unrecognized command: " + args[0]);
       return;
     }
 
@@ -92,6 +92,18 @@ define(["lib/shared"], function(Shared) {
     active.setDisplayName(args[1]);
   });
 
+  Console.addCommand("/clear", "Clear message history from current chat window", function(line, args) {
+    var active = Shared.sessionManager.activeSession;
+    if(!active) return;
+    active.clear();
+  });
+
+  Console.addCommand("/clearall", "Clear message history from all chat windows", function(line, args) {
+    Shared.sessionManager.allSessions().forEach(function(session) {
+      session.clear();
+    });
+  });
+
   Console.addCommand("/close", "Close current chat window", function(line, args) {
     var active = Shared.sessionManager.activeSession;
     if(!active) return;
@@ -104,16 +116,38 @@ define(["lib/shared"], function(Shared) {
     Shared.sessionManager.closeSession(active.peerId);
   });
 
-  Console.addCommand("/clear", "Clear message history from current chat window", function(line, args) {
-    var active = Shared.sessionManager.activeSession;
-    if(!active) return;
-    active.clear();
+  Console.addCommand("/help", "Get info about commands", "/help will show you a list of all commands. /home <command> will give you help on a specific command, e.g. /help /say", function(line, args) {
+    if(args.length == 1) {
+      for(var name in Console.commands) {
+        Console.out(name + ": " + Console.commands[name].description);
+      }
+
+      return;
+    }
+
+    var command = Console.commands[args[1]];
+    if(!command) {
+      Console.out("/help: No such command '" + args[1] + "'");
+      if(args[1].substring(0, 1) != "/") Console.out("(make sure to put a / before the name of the command)");
+      return;
+    }
+
+    Console.out(command.command + ": " + command.description);
+    if(command.help) Console.out(command.help);
   });
 
-  Console.addCommand("/clearall", "Clear message history from all chat windows", function(line, args) {
-    Shared.sessionManager.allSessions().forEach(function(session) {
-      session.clear();
-    });
+  Console.addCommand("/open", "Open a secure connection to a peer", "/open will open a new secure chat window with a specific peer, e.g. /option 1234abcd to open a window to user 1234abcd.", function(line, args) {
+    if(args.length < 2) {
+      Console.out("/open: usage: /open peerId");
+      return;
+    }
+
+    if(Shared.sessionManager.sessions[args[1]]) {
+      Shared.sessionManager.activateSession(args[1]);
+      return;
+    }
+
+    Shared.client.sendGetKey(args[1]);
   });
 
   Console.addCommand("/say", "Say a message in the current window", "Says the literal value of a message in the current window. For instance, `/say /clear` will cause you to say `/clear` instead of clearing your current window.", function(line, args) {
