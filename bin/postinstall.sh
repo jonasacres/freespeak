@@ -16,4 +16,4 @@
 
 #!/bin/sh
 
-browserify dist-src/crypto.js -o public/javascripts/lib/crypto.js
+browserify dist-src/crypto-support.js -o public/javascripts/autogen/crypto-support.js

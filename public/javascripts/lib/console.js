@@ -90,6 +90,7 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
     }
 
     active.setDisplayName(args[1]);
+    Shared.userData.setAlias(active.peerId, args[1]);
   });
 
   Console.addCommand("/clear", "Clear message history from current chat window", function(line, args) {

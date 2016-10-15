@@ -16,14 +16,9 @@
 
 /* Actual FreespeakClient, used to manage comms with server */
 
-define(["lib/crypto"], function(Crypto) {
+define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
   function FreespeakClient() {
-    this.keyLength = 256; 
-    
-    this.privateKey = Crypto.makePrivateKey(this.keyLength);
-    this.publicKey = Crypto.getPublicKey(this.privateKey);
-    this.handshakeNonce = Crypto.toBase64(Crypto.randomBytes(this.keyLength / 8));
-    this.serializedPublicKey = Crypto.serializePublicKey(this.publicKey);
+    this.serializedPublicKey = Crypto.serializePublicKey(Shared.userData.publicKey);
 
     this.keys = {};
     this.eventListeners = {};
@@ -99,7 +94,7 @@ define(["lib/crypto"], function(Crypto) {
   }
 
   FreespeakClient.prototype.sendKey = function() {
-    this.send(JSON.stringify(["key", this.serializedPublicKey, this.handshakeNonce]));
+    this.send(JSON.stringify(["key", this.serializedPublicKey, Shared.userData.handshakeNonce]));
     this.event("keySent", {});
   }
 
@@ -111,14 +106,14 @@ define(["lib/crypto"], function(Crypto) {
   FreespeakClient.prototype.sendOffer = function(id, pubkey, peerHandshakeNonce) {
     var self = this;
 
-    Crypto.deriveSharedSecret(this.privateKey, pubkey, function(sharedKey) {
-      var supplementNonce = Crypto.toBase64(Crypto.randomBytes(self.keyLength / 8));
+    Crypto.deriveSharedSecret(Shared.userData.privateKey, pubkey, function(sharedKey) {
+      var supplementNonce = Crypto.toBase64(Crypto.randomBytes(Shared.userData.keyLength / 8));
 
       var oldInfo = self.connectionInfo[id];
 
       self.connectionInfo[id] = {
         "id":id,
-        "key":Crypto.sha256(supplementNonce + self.handshakeNonce + peerHandshakeNonce),
+        "key":Crypto.sha256(supplementNonce + Shared.userData.handshakeNonce + peerHandshakeNonce),
         "responseHash":Crypto.sha256(self.id + supplementNonce + peerHandshakeNonce)
       };
 
@@ -192,7 +187,7 @@ define(["lib/crypto"], function(Crypto) {
         peerHandshakeNonce = args[3],
         self = this;
     
-    Crypto.deriveSharedSecret(this.privateKey, peerKey, function(sharedKey) {
+    Crypto.deriveSharedSecret(Shared.userData.privateKey, peerKey, function(sharedKey) {
       var supplementNonce = Crypto.symmetricDecrypt(sharedKey, args[4]),
           expectedNonceHash = args[5],
           actualNonceHash = Crypto.sha256(supplementNonce);
@@ -204,8 +199,8 @@ define(["lib/crypto"], function(Crypto) {
 
       var data = {
         "id":args[1],
-        "key": Crypto.sha256(supplementNonce + peerHandshakeNonce + self.handshakeNonce),
-        "responseHash":Crypto.sha256(args[1] + supplementNonce + self.handshakeNonce)
+        "key": Crypto.sha256(supplementNonce + peerHandshakeNonce + Shared.userData.handshakeNonce),
+        "responseHash":Crypto.sha256(args[1] + supplementNonce + Shared.userData.handshakeNonce)
       };
 
       self.event("offer", data);

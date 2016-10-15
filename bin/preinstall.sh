@@ -16,4 +16,4 @@
 
 #!/bin/sh
 
-tar -czf public/freespeak.tgz `find . -type f | grep -v node_modules | grep -vE "(\.git|freespeak.tgz|public/javascripts/lib/crypto\.js|\.heroku|\.profile\.d)" | xargs`
+tar -czf public/freespeak.tgz `find . -type f | grep -v node_modules | grep -vE "(\.git|freespeak.tgz|public/javascripts/autogen|\.heroku|\.profile\.d)" | xargs`
