@@ -32,8 +32,8 @@ define(["lib/shared", "lib/crypto"], function(Shared, Crypto) {
     this.handshakeNonce = Crypto.toBase64(Crypto.randomBytes(this.keyLength / 8));
   }
 
-  UserData.prototype.export = function(passphrase) {
-    return Crypto.encryptWithPassphrase(passphrase, JSON.stringify(this.data));
+  UserData.prototype.export = function(passphrase, options) {
+    return Crypto.encryptWithPassphrase(passphrase, JSON.stringify(this.data), options);
   }
 
   UserData.prototype.import = function(passphrase, data) {

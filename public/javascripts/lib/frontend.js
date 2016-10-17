@@ -194,5 +194,9 @@ define(["lib/util", "lib/shared"], function(Util, Shared) {
     });
   }
 
+  Frontend.passwordPrompt = function(title, text, callback) {
+    callback(null);
+  }
+
   return Frontend;
 });

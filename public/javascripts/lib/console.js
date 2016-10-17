@@ -137,9 +137,19 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
     Shared.client.disconnect();
   });
 
-  Console.addCommand("/export", "Export user identity for use in a later session", function(line, args) {
-    Console.out("Copy the following text into a safe place. It contains your private key and other session data. You may copy-paste it back into Freespeak in a later session to resume using this key.");
-    Console.out("/import " + Shared.userData.export("testing"));
+  Console.addCommand("/export", "Export userinfo for use in a later session", function(line, args) {
+    function showExport(passphrase) {
+      Console.out("Copy the following text into a safe place. It contains your private key and other session data. You may copy-paste it back into Freespeak in a later session to resume using this key.");
+      Console.out("/import " + Shared.userData.export(passphrase));
+    }
+
+    if(args.length >= 2) {
+      showExport(line.substring(args[0].length+1));
+    } else {
+      Frontend.passwordPrompt("Export userinfo", "Enter a passphrase to protect your exported userinfo.", function(passphrase) {
+        if(passphrase) showExport(passphrase);
+      });
+    }
   });
 
   Console.addCommand("/help", "Get info about commands", "/help will show you a list of all commands. /home <command> will give you help on a specific command, e.g. /help /say", function(line, args) {
@@ -162,8 +172,22 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
     if(command.help) Console.out(command.help);
   });
 
-  Console.addCommand("/import", "Import user identity for use in current session", function(line, args) {
-    Shared.userData.import("testing", args[1]);
+  Console.addCommand("/import", "Import userinfo for use in current session", function(line, args) {
+    function doImport(passphrase) {
+      try {
+        Shared.userData.import(passphrase, args[1]);
+      } catch(err) {
+        Console.out("Unable to decipher userinfo.");
+      }
+    }
+
+    if(args.length >= 3) {
+      doImport(line.substring(args[0].length+1+args[1].length+1));
+    } else {
+      Frontend.passwordPrompt("User info passphrase", "Enter the passphrase for this userinfo.", function(passphrase) {
+        if(passphrase) doImport(passphrase);
+      });
+    }
   });
 
   Console.addCommand("/open", "Open a secure connection to a peer", "/open will open a new secure chat window with a specific peer, e.g. /option 1234abcd to open a window to user 1234abcd.", function(line, args) {

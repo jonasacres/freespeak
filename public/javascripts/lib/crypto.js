@@ -95,18 +95,15 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
   /* Symmetric ciphers */
 
   Crypto.aesDecrypt = function(key, ciphertext, iv) {
-    return ciphertext;
     if(typeof(key) == 'string') key = CryptoJS.enc.Latin1.parse(key);
     if(typeof(iv) == 'string') iv = CryptoJS.enc.Latin1.parse(iv);
     return CryptoJS.AES.decrypt(ciphertext, key, {"iv":iv}).toString(CryptoJS.enc.Latin1);
   }
 
   Crypto.aesEncrypt = function(key, plaintext, iv) {
-    return plaintext;
     if(typeof(key) == 'string') key = CryptoJS.enc.Latin1.parse(key);
     if(typeof(iv) == 'string') iv = CryptoJS.enc.Latin1.parse(iv);
-    console.log("Encrypt " + plaintext);
-    return CryptoJS.AES.encrypt(plaintext, key, {"iv":iv}).toString(CryptoJS.enc.Latin1);
+    return CryptoJS.AES.encrypt(CryptoJS.enc.Latin1.parse(plaintext), key, {"iv":iv}).toString();
   }
 
   /* Asymmetric ciphers */
@@ -151,22 +148,36 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
 
   Crypto.passphraseSaltLength = 128/8;
 
-  Crypto.deriveKeyFromPassphrase = function(passphrase, salt) {
-    salt = salt || Crypto.randomBytes(Crypto.passphraseSaltLength);
-    return [ CryptoJS.PBKDF2(passphrase, salt, { keySize:keyLength, iterations:1000 }), salt ];
+  Crypto.deriveKeyFromPassphrase = function(passphrase, options) {
+    options = options || {};
+    var       salt = options.salt || Crypto.randomBytes(Crypto.passphraseSaltLength),
+        iterations = options.iterations || 5000,
+           keySize = options.keySize || 8*keyLength,
+               key = CryptoJS.PBKDF2(passphrase, CryptoJS.enc.Latin1.parse(salt), { "keySize":keySize/32, "iterations":iterations }).toString(CryptoJS.enc.Latin1);
+    return [ key, salt, iterations, keySize ];
   }
 
-  Crypto.encryptWithPassphrase = function(passphrase, plaintext) {
-    var derivation = Crypto.deriveKeyFromPassphrase(passphrase);
-    return Crypto.toBase64(derivation[1] + Crypto.symmetricEncrypt(derivation[0], plaintext));
+  Crypto.encryptWithPassphrase = function(passphrase, plaintext, options) {
+    var     derivation = Crypto.deriveKeyFromPassphrase(passphrase, options),
+                   key = derivation[0]
+            ciphertext = Crypto.symmetricEncrypt(key, plaintext),
+                  salt = derivation[1],
+            iterations = derivation[2],
+               keySize = derivation[3],
+                 terms = [ "FSPP0", iterations, keySize, Crypto.toBase64(salt), ciphertext ],
+               wrapper = terms.join("::");
+    return wrapper;
   }
 
-  Crypto.decryptWithPassphrase = function(passphrase, ciphertext) {
-    var        wrapper = Crypto.fromBase64(ciphertext),
-                  salt = wrapper.substring(0, Crypto.passphraseSaltLength),
-        realCiphertext = wrapper.substring(Crypto.passphraseSaltLength),
-            derivation = Crypto.deriveKeyFromPassphrase(passphrase, salt),
-             plaintext = Crypto.symmetricDecrypt(derivation[0], realCiphertext);
+  Crypto.decryptWithPassphrase = function(passphrase, wrapper) {
+    var          terms = wrapper.split("::"),
+            iterations = parseInt(terms[1]),
+               keySize = parseInt(terms[2]),
+                  salt = Crypto.fromBase64(terms[3]),
+             cipertext = terms[4],
+            derivation = Crypto.deriveKeyFromPassphrase(passphrase, {"salt":salt, "iterations":iterations, "keySize":keySize}),
+                   key = derivation[0],
+             plaintext = Crypto.symmetricDecrypt(key, cipertext);
     return plaintext;
   }
 
@@ -214,8 +225,8 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
              outerCiphertext = outerWrapper.substring(keyLength),
 
               outerPlaintext = Crypto.aesDecrypt(sessionKey, outerCiphertext, outerIV),
-               leftPadLength = outerCiphertext.charCodeAt(0),
-              rightPadLength = outerCiphertext.charCodeAt(1),
+               leftPadLength = outerPlaintext.charCodeAt(0),
+              rightPadLength = outerPlaintext.charCodeAt(1),
              messageKeyIndex = 1 + 1 + leftPadLength, // 2x 1-byte length fields
                 innerIVIndex = messageKeyIndex + keyLength,
         innerCiphertextIndex = innerIVIndex + keyLength,
@@ -232,6 +243,9 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
     if(Crypto.sha256(plaintext) != innerHash) throw "Unable to decipher message.";
     return plaintext;
   }
+
+  var keys = [ Crypto.deriveKeyFromPassphrase("key1")[0], Crypto.deriveKeyFromPassphrase("key2")[0] ];
+  var plaintext = "Hello, world!";
 
   return Crypto;
 });
