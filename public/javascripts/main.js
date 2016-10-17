@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib/shared", "lib/console", "lib/userdata"],
-  function(Frontend, FreespeakClient, ChatSessionManager, Shared, Console, UserData)
+define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib/shared", "lib/console", "lib/userdata", "lib/decoy-traffic-generator"],
+  function(Frontend, FreespeakClient, ChatSessionManager, Shared, Console, UserData, DecoyTrafficGenerator)
 {
   Shared.userData = new UserData();
   Shared.client = new FreespeakClient();
@@ -24,6 +24,7 @@ define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib
   Shared.autoreconnect = true;
   Shared.notificationList = {};
   Shared.console = Console;
+  Shared.decoyTrafficGenerator = new DecoyTrafficGenerator(Shared.client);
 
   function runFreespeak() {
     Frontend.fixElementSizes();

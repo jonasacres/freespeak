@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
+define(["lib/frontend", "lib/chat-session", "lib/crypto"], function(Frontend, ChatSession, Crypto) {
   function ChatSessionManager(client) {
     this.sessions = {};
     this.handlers = {};
@@ -68,14 +68,14 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
       self.wasConnected = false;
     });
 
-    this.client.on("msg", function(event) {
+    this.client.on("msg.text", function(event) {
       var session = self.addSession(event.data.id);
-      session.addMessage(event.data.id, event.data.msg);
+      session.addMessage(event.data.id, Crypto.fromBase64(event.data.msg.text));
     });
 
-    this.client.on("sendMsg", function(event) {
+    this.client.on("sendMsg.text", function(event) {
       var session = self.addSession(event.data.id);
-      session.addMessage("you", event.data.msg);
+      session.addMessage("you", Crypto.fromBase64(event.data.msg.text));
     });
 
     this.client.on("cryptofail", function(event) {

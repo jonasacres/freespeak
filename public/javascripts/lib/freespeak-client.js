@@ -139,21 +139,35 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
     this.event("acceptSent", {"id":connInfo.id});
 
     if(oldInfo && oldInfo.retxMsg) {
-      this.sendMsg(connInfo.id, oldInfo.retxMsg, {"retransmit":true});
+      this.sendMsgText(connInfo.id, oldInfo.retxMsg, {"retransmit":true});
     }
   }
 
-  FreespeakClient.prototype.sendMsg = function(id, msg, options) {
-    if(options == null) options = {};
+  FreespeakClient.prototype.sendMsgText = function(id, text, options) {
+    this.sendMsg(id, text, {"type":"text"});
+  }
 
-    if(!this.connectionInfo[id]) throw "You are not connected to that ID";
-    var ciphertext = Crypto.symmetricEncrypt(this.connectionInfo[id].key, msg),
+  FreespeakClient.prototype.sendMsgDecoy = function(id, length, options) {
+    this.sendMsg(id, Crypto.randomBytes(length), {"type":"decoy"});
+  }
+
+  FreespeakClient.prototype.sendMsg = function(id, text, options) {
+    if(options == null) options = {};
+    if(!options.type) throw "Required type parameter to sendMsg options";
+
+    if(!this.connectionInfo[id]) throw "You are not connected to that ID"; // TODO: try to handshake
+    var encoded = { "type":options.type, "text":Crypto.toBase64(text) },
+        ciphertext = Crypto.symmetricEncrypt(this.connectionInfo[id].key, JSON.stringify(encoded)),
         retransmitted = (options.retransmit == true);
-    this.connectionInfo[id].lastMsg = msg;
-    this.connectionInfo[id].lastMsgCiphertextHash = Crypto.sha256Truncated(ciphertext, 8);
+
+    if(options.type == "text") {
+      this.connectionInfo[id].lastMsg = text;
+      this.connectionInfo[id].lastMsgCiphertextHash = Crypto.sha256Truncated(ciphertext, 8);
+    }
 
     this.send(JSON.stringify(["msg", id, ciphertext, retransmitted]));
-    this.event("sendMsg", {"id":id, "msg":msg, "retransmit":retransmitted });
+    this.event("sendMsg", {"id":id, "msg":encoded, "retransmit":retransmitted });
+    this.event("sendMsg." + options.type, {"id":id, "msg":encoded, "retransmit":retransmitted });
   }
 
   FreespeakClient.prototype.sendCryptoFail = function(id, ciphertext) {
@@ -220,7 +234,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
     }
     
     if(connInfo.retxMsg) {
-      this.sendMsg(connInfo.id, connInfo.retxMsg, {"retransmit":true});
+      this.sendMsgText(connInfo.id, connInfo.retxMsg, {"retransmit":true});
       delete connInfo.retxMsg;
     }
 
@@ -233,8 +247,14 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
     
     try {
       if(!connInfo) throw "Don't have a connection to this peer";
-      this.event("msg", {"id":args[1], "msg":Crypto.symmetricDecrypt(connInfo.key, args[2]), "retransmit":args[2]});
+      var plaintext = Crypto.symmetricDecrypt(connInfo.key, args[2]),
+            decoded = JSON.parse(plaintext);
+      if(typeof decoded == "object" && decoded.type) {
+        this.event("msg", {"id":args[1], "msg":decoded, "retransmit":args[2]});
+        this.event("msg."+decoded.type, {"id":args[1], "msg":decoded, "retransmit":args[2]});
+      }
     } catch(exc) {
+      console.log(exc);
       this.sendCryptoFail(args[1], Crypto.sha256Truncated(args[2], 8));
     }
   }

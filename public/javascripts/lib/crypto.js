@@ -58,6 +58,8 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
   }
 
   Crypto.randInt = function(max) {
+    if(max <= 0) return 0;
+    
     var n,
         bits = Math.ceil(Math.log(max)/Math.log(2));
     do

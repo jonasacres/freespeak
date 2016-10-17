@@ -44,13 +44,12 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
   }
 
   Console.processMessage = function(msg) {
-    if(Shared.sessionManager.activeSession.connected) {
-      Shared.client.sendMsg(Shared.sessionManager.activeSession.peerId, msg);
-    } else if(Shared.sessionManager.activeSession.peerId == "system") {
+    if(Shared.sessionManager.activeSession.peerId == "system") {
       Shared.sessionManager.activeSession.addMessage("system", "You cannot talk in this window.");
-    } else {
-      Shared.sessionManager.activeSession.addMessage("system", "You are not connected.");
+      return;
     }
+
+    Shared.client.sendMsgText(Shared.sessionManager.activeSession.peerId, msg);
   }
 
   Console.processSlashCommand = function(line) {
