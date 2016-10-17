@@ -27,6 +27,7 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
 
     this.client.on("connect", function(event) {
       var url = Frontend.urlPrefix() + "/talk/" + event.data.id;
+      self.wasConnected = true;
 
       self.addSystemMessage("You are anonymous user " + event.data.id + ".");
       self.addSystemMessage("Give this URL to people you want to chat securely with:");
@@ -34,6 +35,9 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
 
       self.addSystemMessage("Server MOTD:");
       self.addSystemMessage([ ["motd", event.data.motd] ]);
+
+      if(self.everConnected) self.addBroadcastMessage("system", "Reconnected.");
+      self.everConnected = true;
     });
 
     this.client.on("getkey", function(event) {
@@ -60,7 +64,8 @@ define(["lib/frontend", "lib/chat-session"], function(Frontend, ChatSession) {
 
     this.client.on("close", function(event) {
       self.addSystemMessage("Connection to server lost.");
-      self.addBroadcastMessage("system", "Disconnected.", {"notify":false} );
+      if(self.wasConnected) self.addBroadcastMessage("system", "Disconnected.", {"notify":false} );
+      self.wasConnected = false;
     });
 
     this.client.on("msg", function(event) {
