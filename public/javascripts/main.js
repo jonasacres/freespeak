@@ -15,7 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib/shared", "lib/console", "lib/userdata"],
-  function(Frontend, FreespeakClient, ChatSessionManager, Shared, Console, UserData) {
+  function(Frontend, FreespeakClient, ChatSessionManager, Shared, Console, UserData)
+{
   Shared.userData = new UserData();
   Shared.client = new FreespeakClient();
   Shared.sessionManager = new ChatSessionManager(Shared.client);

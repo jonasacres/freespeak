@@ -16,4 +16,5 @@
 
 #!/bin/sh
 
+mkdir -p public/javascripts/autogen
 browserify dist-src/crypto-support.js -o public/javascripts/autogen/crypto-support.js

@@ -202,7 +202,7 @@ app.setupWebSocket = function(server) {
     }
 
     let processWrapper = (msg) => {
-      if(msg.length > 1024) reject("Request is too long"); // TODO: put this in a config somewhere
+      if(msg.length > 1024*16) reject("Request is too long"); // TODO: put this in a config somewhere
       try {
         args = JSON.parse(msg);
         if(!(args instanceof Array)) reject("Request must be an array");
@@ -235,7 +235,7 @@ app.setupWebSocket = function(server) {
         for(let peerId of info.peers) {
           let peerInfo = socketIdMap[peerId];
           if(!peerInfo) continue;
-          peerInfo.peers.delete(id);
+          peerInfo.peers.delete(ws.id);
           peerInfo.socket.send(JSON.stringify(["disconnect", ws.id]));
         }
       }

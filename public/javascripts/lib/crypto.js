@@ -17,6 +17,7 @@
 define(["autogen/crypto-support"], function(CryptoSupport) {
   var eccrypto = CryptoSupport.eccrypto;
   var CryptoJS = CryptoSupport.CryptoJS;
+  var Buffer = CryptoSupport.Buffer;
 
   var keyLength = 32;
 
@@ -29,11 +30,11 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
   /* Character encoding */
 
   Crypto.fromBase64 = function(buf) {
-    return CryptoJS.enc.Base64.parse(buf).toString(CryptoJS.enc.Latin1);
+    return Buffer.from(buf, 'base64').toString('utf8');
   }
 
   Crypto.toBase64 = function(buf) {
-    return CryptoJS.enc.Latin1.parse(buf).toString(CryptoJS.enc.Base64);
+    return Buffer.from(buf).toString('base64');
   }
 
   Crypto.hexToBytes = function(buf) {
@@ -44,10 +45,10 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
     return CryptoJS.enc.Latin1.parse(buf).toString(CryptoJS.enc.Hex);
   }
 
-  Crypto.stringToArray = function(buf) {
+  Crypto.stringToBuffer = function(str) {
     var arr = [];
-    for(var i = 0; i < buf.length; i++) arr.push(buf.charCodeAt(i));
-    return arr;
+    for(var i in str) arr.push(str.charCodeAt(i));
+    return Buffer.from(arr);
   }
 
   /* PRNG */
@@ -57,12 +58,18 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
   }
 
   Crypto.randInt = function(max) {
-    var n = 0,
-        r = Crypto.randomBytes(Math.ceil(Math.log(max)/Math.log(2)));
-    
-    for(var i = 0; i < r.length; i++) {
-      n = (n << 8) + r.charCodeAt(i);
-    }
+    var n,
+        bits = Math.ceil(Math.log(max)/Math.log(2));
+    do
+    {
+      var r = Crypto.randomBytes(Math.ceil(bits/8));
+      n = 0;
+      for(var i = 0; i < r.length; i++) {
+        var byte = r.charCodeAt(i);
+        if(i == r.length-1 && bits % 8 != 0) byte >>= 8 - (bits%8);
+        n |= (byte << (8*i));
+      }
+    } while(n >= max);
 
     return n;
   }
@@ -81,42 +88,47 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
   /* Symmetric ciphers */
 
   Crypto.aesDecrypt = function(key, ciphertext, iv) {
+    return ciphertext;
     if(typeof(key) == 'string') key = CryptoJS.enc.Latin1.parse(key);
     if(typeof(iv) == 'string') iv = CryptoJS.enc.Latin1.parse(iv);
     return CryptoJS.AES.decrypt(ciphertext, key, {"iv":iv}).toString(CryptoJS.enc.Latin1);
   }
 
   Crypto.aesEncrypt = function(key, plaintext, iv) {
+    return plaintext;
     if(typeof(key) == 'string') key = CryptoJS.enc.Latin1.parse(key);
     if(typeof(iv) == 'string') iv = CryptoJS.enc.Latin1.parse(iv);
+    console.log("Encrypt " + plaintext);
     return CryptoJS.AES.encrypt(plaintext, key, {"iv":iv}).toString(CryptoJS.enc.Latin1);
   }
 
   /* Asymmetric ciphers */
 
   Crypto.deriveSharedSecret = function(private, public, callback) {
-    return eccrypto.derive(Crypto.stringToArray(private), Crypto.stringToArray(public)).then(function(sharedKey) {
-      callback(sharedKey);
+    var unpackedPub = Crypto.stringToBuffer(Crypto.hexToBytes(public)),
+        unpackedPriv = Crypto.stringToBuffer(Crypto.hexToBytes(private));
+
+    return eccrypto.derive(unpackedPriv, unpackedPub).then(function(sharedKey) {
+      var normalizedKey = Buffer.from(sharedKey).toString("ascii");
+      callback(normalizedKey);
     });
   }
 
   Crypto.makePrivateKey = function(bits) {
-    return Crypto.randomBytes(bits / 8)
+    return Crypto.bytesToHex(Crypto.randomBytes(bits / 8))
   }
 
   Crypto.getPublicKey = function(privateKey) {
-    var s = "",
-        pub = eccrypto.getPublic(Crypto.stringToArray(privateKey));
-    for(var i in pub) s += String.fromCharCode(privateKey[i]);
-    return s;
+    var pub = eccrypto.getPublic(Crypto.stringToBuffer(Crypto.hexToBytes(privateKey)));
+    return pub.toString("hex");
   }
 
   Crypto.serializePublicKey = function(publicKey) {
-    return Crypto.toBase64(publicKey);
+    return publicKey;
   }
 
   Crypto.deserializePublicKey = function(serializedPublicKey) {
-    return Crypto.fromBase64(serializedPublicKey);
+    return serializedPublicKey;
   }
 
   /* Padding */
@@ -143,32 +155,33 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
    */
 
   Crypto.symmetricEncrypt = function(sessionKey, plaintext) {
-    // Encrypt a message using our scheme:
-    // Inner cipher, encrypted with randomly-generated message key and random IV:
+    // Inner contents, encrypted with randomly-generated message key and random IV:
     //   sha256(plaintext) + plaintext
-    // Outer cipher, encrypted with session key and random IV:
+    // Outer contents, encrypted with session key and random IV:
     //   leftPaddingLength + leftPadding + messageKey + innerIV + innerCipherText + rightPadding
     // Final message:
     //   base64(outerIv + outerCiphertext)
 
-    var        innerKey = new Crypto.randomBytes(keyLength),
-                innerIV = new Crypto.randomBytes(keyLength),
-                outerIV = new Crypto.randomBytes(keyLength),
-         innerPlaintext = Crypto.hexToBytes(Crypto.sha256(plaintext)) + plaintext,
-
+    var        innerKey = Crypto.randomBytes(keyLength),
+                innerIV = Crypto.randomBytes(keyLength),
+                outerIV = Crypto.randomBytes(keyLength);
+           innerWrapper = Crypto.hexToBytes(Crypto.sha256(plaintext)) + plaintext;
           leftPadLength = Crypto.randInt(256), // 256 because we use a 1-byte length field
-         rightPadLength = Crypto.randInt(256),
+         rightPadLength = Crypto.randInt(256);
+        innerCiphertext = Crypto.aesEncrypt(innerKey, innerWrapper, innerIV);
 
          outerPlaintext =   String.fromCharCode(leftPadLength)
                           + String.fromCharCode(rightPadLength)
                           + Crypto.messagePaddingBytes(leftPadLength)
                           + innerKey
                           + innerIV
-                          + Crypto.aesEncrypt(innerKey, innerPlaintext, innerIV)
-                          + Crypto.messagePaddingBytes(rightPadLength),
-        outerCiphertext = Crypto.aesEncrypt(sessionKey, outerPlaintext, outerIV);
+                          + innerCiphertext
+                          + Crypto.messagePaddingBytes(rightPadLength);
+        outerCiphertext = Crypto.aesEncrypt(sessionKey, outerPlaintext, outerIV),
+           outerWrapper = outerIV + outerCiphertext,
+             ciphertext = Crypto.toBase64(outerWrapper);
 
-    return Crypto.toBase64(outerIV + outerCiphertext);
+    return ciphertext;
   }
 
   Crypto.symmetricDecrypt = function(sessionKey, ciphertext) {
@@ -193,7 +206,7 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
                    innerHash = Crypto.bytesToHex(innerWrapper.substring(0, 32)), // sha256 -> 32 bytes
                    plaintext = innerWrapper.substring(32);
 
-    if(sha256(plaintext) != innerHash) throw "Unable to decipher message.";
+    if(Crypto.sha256(plaintext) != innerHash) throw "Unable to decipher message.";
     return plaintext;
   }
 

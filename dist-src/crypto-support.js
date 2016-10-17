@@ -21,5 +21,6 @@ define(function() {
   return {
     "eccrypto":eccrypto,
     "CryptoJS":CryptoJS,
+    "Buffer":Buffer
   };
 });
