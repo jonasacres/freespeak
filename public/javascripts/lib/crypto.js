@@ -69,11 +69,16 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
       for(var i = 0; i < r.length; i++) {
         var byte = r.charCodeAt(i);
         if(i == r.length-1 && bits % 8 != 0) byte >>= 8 - (bits%8);
-        n |= (byte << (8*i));
+        n = (n | (byte << (8*i))) >>> 0;
       }
     } while(n >= max);
 
     return n;
+  }
+
+  Crypto.randFloat = function() {
+    var max = 4294967296;
+    return Crypto.randInt(max)/(max-1);
   }
 
   /* Secure hashing */
