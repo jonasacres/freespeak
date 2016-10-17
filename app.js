@@ -193,7 +193,7 @@ app.setupWebSocket = function(server) {
       if(!peer) reject("Peer is not connected.");
       if(hash != null && (typeof hash != "string" || hash.length != 8)) reject("Hash should be last 8 characters of failed message ciphertext, or null");
 
-      peer.socket.send(JSON.stringify["cryptofail", ws.id, hash]);
+      peer.socket.send(JSON.stringify(["cryptofail", ws.id, hash]));
     }
 
     // process a heartbeat request

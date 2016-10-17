@@ -64,6 +64,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
 
     this.socket.onmessage = function(event) {
       var args;
+      // console.log("RX " + event.data.length + ": " + event.data);
       try {
         args = JSON.parse(event.data);
       } catch(exc) {
@@ -98,6 +99,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
 
   FreespeakClient.prototype.send = function(payload) {
     // TODO: don't attempt to send if socket is in CLOSED or CLOSING state
+    // console.log("TX " + payload.length + ": " + payload);
     this.socket.send(payload);
   }
 
@@ -120,13 +122,13 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
     var self = this;
 
     Crypto.deriveSharedSecret(this.userData.privateKey, pubkey, function(sharedKey) {
-      var supplementNonce = Crypto.toBase64(Crypto.randomBytes(this.userData.keyLength / 8));
+      var supplementNonce = Crypto.toBase64(Crypto.randomBytes(self.userData.keyLength / 8));
 
       var oldInfo = self.connectionInfo[id];
 
       self.connectionInfo[id] = {
         "id":id,
-        "key":Crypto.sha256(supplementNonce + this.userData.handshakeNonce + peerHandshakeNonce),
+        "key":Crypto.sha256(supplementNonce + self.userData.handshakeNonce + peerHandshakeNonce),
         "responseHash":Crypto.sha256(self.id + supplementNonce + peerHandshakeNonce)
       };
 
@@ -157,7 +159,9 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
   }
 
   FreespeakClient.prototype.sendMsgText = function(id, text, options) {
-    this.sendMsg(id, text, {"type":"text"});
+    options = options || {};
+    options.type = "text";
+    this.sendMsg(id, text, options);
   }
 
   FreespeakClient.prototype.sendMsgDecoy = function(id, length, options) {
@@ -226,8 +230,8 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
 
       var data = {
         "id":args[1],
-        "key": Crypto.sha256(supplementNonce + peerHandshakeNonce + this.userData.handshakeNonce),
-        "responseHash":Crypto.sha256(args[1] + supplementNonce + this.userData.handshakeNonce)
+        "key": Crypto.sha256(supplementNonce + peerHandshakeNonce + self.userData.handshakeNonce),
+        "responseHash":Crypto.sha256(args[1] + supplementNonce + self.userData.handshakeNonce)
       };
 
       self.event("offer", data);
@@ -268,7 +272,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
       }
     } catch(exc) {
       console.log(exc);
-      this.sendCryptoFail(args[1], Crypto.sha256Truncated(args[2], 8));
+      this.sendCryptoFail(args[1], args[2]);
     }
   }
 

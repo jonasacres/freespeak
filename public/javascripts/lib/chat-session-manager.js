@@ -75,7 +75,8 @@ define(["lib/frontend", "lib/chat-session", "lib/crypto"], function(Frontend, Ch
 
     this.client.on("sendMsg.text", function(event) {
       var session = self.addSession(event.data.id);
-      session.addMessage("you", Crypto.fromBase64(event.data.msg.text));
+      var retxPrefix = event.data.retransmit ? "[RETRY] " : "";
+      session.addMessage("you", retxPrefix + Crypto.fromBase64(event.data.msg.text));
     });
 
     this.client.on("cryptofail", function(event) {
