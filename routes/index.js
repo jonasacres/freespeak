@@ -21,6 +21,7 @@ var pjson = require('../package.json');
 function defaultRenderVars() {
   return {
     title:"Freespeak",
+    name:pjson.name,
     version:pjson.version,
     donateAddress:"112FioiVChxs28ahM25s8imZ5397Jbanf",
     repoUrl:"https://github.com/jonasacres/freespeak",
