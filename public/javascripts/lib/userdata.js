@@ -22,6 +22,7 @@ define(["lib/shared", "lib/crypto"], function(Shared, Crypto) {
 
     this.keyLength = 256;
     this.generateKeys();
+    this.eventListeners = {};
   }
 
   UserData.prototype.generateKeys = function() {
@@ -32,21 +33,21 @@ define(["lib/shared", "lib/crypto"], function(Shared, Crypto) {
   }
 
   UserData.prototype.export = function(passphrase) {
-    var derivedKeyInfo = Crypto.deriveKeyFromPassphrase(passphrase);
-    return Crypto.symmetricEncrypt(derivedKeyInfo[0], JSON.stringify(this.data)) + "," + Crypto.toBase64(derivedKeyInfo[1]);
+    return Crypto.encryptWithPassphrase(passphrase, JSON.stringify(this.data));
   }
 
   UserData.prototype.import = function(passphrase, data) {
-    var info = data.split(",");
-    if(info.length != 2) throw "Cannot parse data";
-
-    var keyInfo = Crypto.deriveKeyFromPassphrase(passphrase, Crypto.fromBase64(info[1]));
-    this.data = JSON.parse(Crypto.symmetricDecrypt(keyInfo[0], info[0]));
+    this.data = JSON.parse(Crypto.decryptWithPassphrase(passphrase, data));
 
     if(this.data.privateKey) {
-      this.privateKey = Crypto.fromBase64(this.data.privateKey);
-      this.publicKey = Crypto.getPublicKey(this.privateKey);
-      this.handshakeNonce = Crypto.toBase64(Crypto.randomBytes(this.keyLength / 8));
+      var importedKey = Crypto.fromBase64(this.data.privateKey);
+      if(importedKey != this.privateKey) {
+        var oldPublicKey = this.publicKey;
+        this.privateKey = importedKey;
+        this.publicKey = Crypto.getPublicKey(this.privateKey);
+        this.handshakeNonce = Crypto.toBase64(Crypto.randomBytes(this.keyLength / 8));
+        this.event("changeKey", {"oldPublicKey":oldPublicKey, "newPublicKey":this.publicKey});
+      }
     }
   }
 
@@ -70,6 +71,19 @@ define(["lib/shared", "lib/crypto"], function(Shared, Crypto) {
 
   UserData.prototype.getProfileName = function() {
     return this.data.profileName;
+  }
+
+  UserData.prototype.on = function(name, callback) {
+    if(!this.eventListeners[name]) this.eventListeners[name] = [];
+    this.eventListeners[name].push(callback);
+  }
+
+  UserData.prototype.event = function(name, data) {
+    var event = { "name":name, "data":data },
+        listeners = this.eventListeners[name];
+
+    if(!listeners) return;
+    listeners.forEach(function(listener) { listener(event) });
   }
 
   return UserData;

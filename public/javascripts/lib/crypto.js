@@ -149,9 +149,25 @@ define(["autogen/crypto-support"], function(CryptoSupport) {
 
   /* Key derivation */
 
+  Crypto.passphraseSaltLength = 128/8;
+
   Crypto.deriveKeyFromPassphrase = function(passphrase, salt) {
-    salt = salt || Crypto.randomBytes(128/8);
+    salt = salt || Crypto.randomBytes(Crypto.passphraseSaltLength);
     return [ CryptoJS.PBKDF2(passphrase, salt, { keySize:keyLength, iterations:1000 }), salt ];
+  }
+
+  Crypto.encryptWithPassphrase = function(passphrase, plaintext) {
+    var derivation = Crypto.deriveKeyFromPassphrase(passphrase);
+    return Crypto.toBase64(derivation[1] + Crypto.symmetricEncrypt(derivation[0], plaintext));
+  }
+
+  Crypto.decryptWithPassphrase = function(passphrase, ciphertext) {
+    var        wrapper = Crypto.fromBase64(ciphertext),
+                  salt = wrapper.substring(0, Crypto.passphraseSaltLength),
+        realCiphertext = wrapper.substring(Crypto.passphraseSaltLength),
+            derivation = Crypto.deriveKeyFromPassphrase(passphrase, salt),
+             plaintext = Crypto.symmetricDecrypt(derivation[0], realCiphertext);
+    return plaintext;
   }
 
   /* Now we have a frontend to symmetric encryption designed to apply some major niceties, including:

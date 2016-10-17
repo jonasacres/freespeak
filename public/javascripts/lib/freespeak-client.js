@@ -17,14 +17,23 @@
 /* Actual FreespeakClient, used to manage comms with server */
 
 define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
-  function FreespeakClient() {
-    this.serializedPublicKey = Crypto.serializePublicKey(Shared.userData.publicKey);
+  function FreespeakClient(userData) {
+    var self = this;
+    this.userData = userData || Shared.userData;
 
     this.keys = {};
     this.eventListeners = {};
     this.connectionInfo = {};
 
     this.state = "disconnected";
+
+    this.userData.on("changeKey", function(event) {
+      if(self.state == "disconnected") return;
+      self.allowReconnect = false;
+
+      self.disconnect();
+      self.connect(self.url);
+    });
   }
 
   FreespeakClient.prototype.on = function(name, callback) {
@@ -41,10 +50,14 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
   }
 
   FreespeakClient.prototype.connect = function(url) {
+    this.url = url;
     this.socket = new WebSocket(url);
+    this.serializedPublicKey = Crypto.serializePublicKey(this.userData.publicKey);
+
     var self = this;
 
     this.socket.onopen = function(event) {
+      self.allowReconnect = true;
       self.sendKey();
       self.sendHeartbeat();
     }
@@ -68,7 +81,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
 
     this.socket.onclose = function(event) {
       self.state = "disconnected";
-      self.event("close", {});
+      self.event("close", {"reconnectable":self.allowReconnect});
     }
 
     this.state = "connecting";
@@ -94,7 +107,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
   }
 
   FreespeakClient.prototype.sendKey = function() {
-    this.send(JSON.stringify(["key", this.serializedPublicKey, Shared.userData.handshakeNonce]));
+    this.send(JSON.stringify(["key", this.serializedPublicKey, this.userData.handshakeNonce]));
     this.event("keySent", {});
   }
 
@@ -106,14 +119,14 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
   FreespeakClient.prototype.sendOffer = function(id, pubkey, peerHandshakeNonce) {
     var self = this;
 
-    Crypto.deriveSharedSecret(Shared.userData.privateKey, pubkey, function(sharedKey) {
-      var supplementNonce = Crypto.toBase64(Crypto.randomBytes(Shared.userData.keyLength / 8));
+    Crypto.deriveSharedSecret(this.userData.privateKey, pubkey, function(sharedKey) {
+      var supplementNonce = Crypto.toBase64(Crypto.randomBytes(this.userData.keyLength / 8));
 
       var oldInfo = self.connectionInfo[id];
 
       self.connectionInfo[id] = {
         "id":id,
-        "key":Crypto.sha256(supplementNonce + Shared.userData.handshakeNonce + peerHandshakeNonce),
+        "key":Crypto.sha256(supplementNonce + this.userData.handshakeNonce + peerHandshakeNonce),
         "responseHash":Crypto.sha256(self.id + supplementNonce + peerHandshakeNonce)
       };
 
@@ -201,7 +214,7 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
         peerHandshakeNonce = args[3],
         self = this;
     
-    Crypto.deriveSharedSecret(Shared.userData.privateKey, peerKey, function(sharedKey) {
+    Crypto.deriveSharedSecret(this.userData.privateKey, peerKey, function(sharedKey) {
       var supplementNonce = Crypto.symmetricDecrypt(sharedKey, args[4]),
           expectedNonceHash = args[5],
           actualNonceHash = Crypto.sha256(supplementNonce);
@@ -213,8 +226,8 @@ define(["lib/crypto", "lib/shared"], function(Crypto, Shared) {
 
       var data = {
         "id":args[1],
-        "key": Crypto.sha256(supplementNonce + peerHandshakeNonce + Shared.userData.handshakeNonce),
-        "responseHash":Crypto.sha256(args[1] + supplementNonce + Shared.userData.handshakeNonce)
+        "key": Crypto.sha256(supplementNonce + peerHandshakeNonce + this.userData.handshakeNonce),
+        "responseHash":Crypto.sha256(args[1] + supplementNonce + this.userData.handshakeNonce)
       };
 
       self.event("offer", data);

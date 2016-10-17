@@ -29,6 +29,7 @@ define(["lib/frontend", "lib/chat-session", "lib/crypto"], function(Frontend, Ch
       var url = Frontend.urlPrefix() + "/talk/" + event.data.id;
       self.wasConnected = true;
 
+      if(self.everConnected) self.addBroadcastMessage("system", "Reconnected.");
       self.addSystemMessage("You are anonymous user " + event.data.id + ".");
       self.addSystemMessage("Give this URL to people you want to chat securely with:");
       self.addSystemMessage([ [ "chatlink", url ] ]);
@@ -36,7 +37,6 @@ define(["lib/frontend", "lib/chat-session", "lib/crypto"], function(Frontend, Ch
       self.addSystemMessage("Server MOTD:");
       self.addSystemMessage([ ["motd", event.data.motd] ]);
 
-      if(self.everConnected) self.addBroadcastMessage("system", "Reconnected.");
       self.everConnected = true;
     });
 
@@ -87,6 +87,11 @@ define(["lib/frontend", "lib/chat-session", "lib/crypto"], function(Frontend, Ch
       } else {
         session.addMessage("system", "Remote peer was unable to decipher message.");
       }
+    });
+
+    this.client.userData.on("changeKey", function(event) {
+      self.reset();
+      self.addSystemMessage("Changed key.");
     });
   }
 
@@ -192,6 +197,14 @@ define(["lib/frontend", "lib/chat-session", "lib/crypto"], function(Frontend, Ch
     if(this.activeSession && this.activeSession.peerId == id) {
       this.activateSession("system"); // we could probably do better than this, but not without a lot of work
     }
+  }
+
+  ChatSessionManager.prototype.reset = function() {
+    var self = this;
+
+    this.allSessions().forEach(function(session) {
+      if(session.peerId != "system") self.closeSession(session.peerId)
+    });
   }
 
   ChatSessionManager.prototype.event = function(name, data) {

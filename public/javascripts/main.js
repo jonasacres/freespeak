@@ -110,7 +110,7 @@ define(["lib/frontend", "lib/freespeak-client", "lib/chat-session-manager", "lib
     });
 
     Shared.client.on("close", function(event) {
-      if(Shared.autoreconnect) {
+      if(Shared.autoreconnect && event.data.reconnectable) {
         var delay = 5000;
         Shared.sessionManager.addSystemMessage("Reconnecting in " + (delay/1000) + " seconds...", {"notify":false});
         setTimeout(function() {

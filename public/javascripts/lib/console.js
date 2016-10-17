@@ -127,7 +127,7 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
     Shared.client.connect(Frontend.webSocketUrl());
   });
 
-  Console.addCommand("/disconnect", "Close connection with server", "Closes connection with server.", function(line, args) {
+  Console.addCommand("/disconnect", "Close connection with server", function(line, args) {
     if(Shared.client.state == "disconnected") {
       Console.out("Already disconnected.");
       return;
@@ -135,6 +135,11 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
 
     Shared.autoreconnect = false;
     Shared.client.disconnect();
+  });
+
+  Console.addCommand("/export", "Export user identity for use in a later session", function(line, args) {
+    Console.out("Copy the following text into a safe place. It contains your private key and other session data. You may copy-paste it back into Freespeak in a later session to resume using this key.");
+    Console.out("/import " + Shared.userData.export("testing"));
   });
 
   Console.addCommand("/help", "Get info about commands", "/help will show you a list of all commands. /home <command> will give you help on a specific command, e.g. /help /say", function(line, args) {
@@ -155,6 +160,10 @@ define(["lib/shared", "lib/frontend"], function(Shared, Frontend) {
 
     Console.out(command.command + ": " + command.description);
     if(command.help) Console.out(command.help);
+  });
+
+  Console.addCommand("/import", "Import user identity for use in current session", function(line, args) {
+    Shared.userData.import("testing", args[1]);
   });
 
   Console.addCommand("/open", "Open a secure connection to a peer", "/open will open a new secure chat window with a specific peer, e.g. /option 1234abcd to open a window to user 1234abcd.", function(line, args) {
